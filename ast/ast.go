@@ -399,7 +399,7 @@ func (st *StructType) String() string {
 type StructInstantiation struct {
 	Token  token.Token
 	Left   Expression
-	Fields map[Identifier]Expression
+	Fields map[string]Expression
 }
 
 func (si *StructInstantiation) expressionNode()      {}
@@ -407,7 +407,7 @@ func (si *StructInstantiation) TokenLiteral() string { return si.Token.Literal }
 func (si *StructInstantiation) String() string {
 	fields := []string{}
 	for id, val := range si.Fields {
-		fields = append(fields, id.String()+" : "+val.String())
+		fields = append(fields, id+" : "+val.String())
 	}
 	return si.Left.String() + " { " + strings.Join(fields, ", ") + "}"
 }

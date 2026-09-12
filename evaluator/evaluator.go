@@ -99,7 +99,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(left) {
 			return left
 		}
-		return evalFieldAccess(left, node.Right)
+		return evalFieldAccess(left, node.Right, env)
 	case *ast.CallExpression:
 		function := Eval(node.Function, env)
 		if isError(function) {
@@ -152,17 +152,27 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	return nil
 }
 
-func evalFieldAccess(left object.Object, right ast.Expression) object.Object {
+func evalFieldAccess(left object.Object, right ast.Expression, env *object.Environment) object.Object {
 	switch left := left.(type) {
 	case *object.StructInstance:
 		if r, ok := right.(*ast.Identifier); ok {
-			value, ok := left.Fields[*r]
+			value, ok := left.Fields[r.Value]
 			if !ok {
 				return newError("Struct %s Has no field %s", left.Type(), right.String())
 			}
 			return value
+		} else if r, ok := right.(*ast.CallExpression); ok {
+			value, ok := left.Fields[r.Function.(*ast.Identifier).Value]
+			if !ok {
+				return newError("Struct %s Has no function field %s", left.Type(), right.String())
+			}
+			args := evalExpressions(r.Arguments, env)
+			if len(args) == 1 && isError(args[0]) {
+				return args[0]
+			}
+			return applyFunction(value, args)
 		} else {
-			return newError("Cannot use non identifier to access struct field. Got=%s", right.String())
+			return newError("Cannot use non identifier to access struct field. Got=%s", right)
 		}
 	}
 	return nil
@@ -170,9 +180,9 @@ func evalFieldAccess(left object.Object, right ast.Expression) object.Object {
 
 func evalStructInstantiation(left object.Object, node *ast.StructInstantiation, env *object.Environment) object.Object {
 	if left.Type() != object.STRUCT_OBJ {
-		return newError("Cannot instantiate struct from ", left.Type())
+		return newError(fmt.Sprintf("Cannot instantiate struct from %s since %s is not a type", left.Type(), left.Type()))
 	}
-	st := &object.StructInstance{Fields: map[ast.Identifier]object.Object{}}
+	st := &object.StructInstance{Fields: map[string]object.Object{}}
 	for f, val := range node.Fields {
 		value := Eval(val, env)
 		if isError(value) {

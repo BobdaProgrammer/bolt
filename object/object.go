@@ -202,13 +202,13 @@ func (st *StructType) Inspect() string {
 func (st *StructType) Type() ObjectType { return STRUCT_OBJ }
 
 type StructInstance struct {
-	Fields map[ast.Identifier]Object
+	Fields map[string]Object
 }
 
 func (si *StructInstance) Inspect() string {
 	fields := []string{}
 	for id, val := range si.Fields {
-		fields = append(fields, id.String()+" : "+val.Inspect())
+		fields = append(fields, id+" : "+val.Inspect())
 	}
 	return "{" + strings.Join(fields, ", ") + "}"
 }

@@ -1,23 +1,31 @@
-let map = fn(arr, f){ // Map function
-    let iter = fn(arr, accumulated) {
-        if len(arr) == 0{
-            accumulated // return accumulated
-        }else{
-            let l = len(arr);
-            let rstart = 1;
-            let rend = l;
-            let next  = arr[rstart:rend]
-            if l==1 {
-                let next = []
-            }
-            iter(next, push(accumulated,f(arr[0])));
-        }
-    }; 
-    iter(arr, [])
-}
+struct Person{name, age}
 
-let double = fn(item){
-    return item * 2
-}
+let Person = new Person{name:"jeff", age:25}
+log(Person.name)
+let bob = new Person{name:"bob", age:20}
 
-map([1.5,2.2,3,4,5,true], double)
+
+
+//let map = fn(arr, f){ // Map function
+//    let iter = fn(arr, accumulated) {
+//        if len(arr) == 0{
+//            accumulated // return accumulated
+//        }else{
+//            let l = len(arr);
+//            let rstart = 1;
+//            let rend = l;
+//            let next  = arr[rstart:rend]
+//            if l==1 {
+//                let next = []
+//            }
+//            iter(next, push(accumulated,f(arr[0])));
+//        }
+//    }; 
+//    iter(arr, [])
+//}
+//
+//let double = fn(item){
+//    return item * 2
+//}
+//
+//map([1.5,2.2,3,4,5,true], double)

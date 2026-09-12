@@ -80,7 +80,7 @@ func (p *Parser) parseStructInstantiation() ast.Expression {
 		return nil
 	}
 	sti := &ast.StructInstantiation{Token: p.curToken, Left: left}
-	fields := map[ast.Identifier]ast.Expression{}
+	fields := map[string]ast.Expression{}
 	for !p.peekTokenIs(token.EOF) {
 		p.nextToken()
 		ident := p.parseIdentifier().(*ast.Identifier)
@@ -90,7 +90,7 @@ func (p *Parser) parseStructInstantiation() ast.Expression {
 		}
 		p.nextToken()
 		val := p.parseExpression(LOWEST)
-		fields[*ident] = val
+		fields[ident.Value] = val
 		if p.peekTokenIs(token.RBRACE) {
 			p.nextToken()
 			break
