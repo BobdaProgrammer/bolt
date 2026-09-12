@@ -37,6 +37,7 @@ func (l *Lexer) NextToken() token.Token {
 
 	var tok token.Token
 
+Outer:
 	l.skipWhitespace()
 
 	switch l.ch {
@@ -62,24 +63,63 @@ func (l *Lexer) NextToken() token.Token {
 		} else {
 			tok = l.newToken(token.BANG, l.ch)
 		}
+	case '&':
+		if l.peekChar() == '&' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.AND, Literal: literal, Line: l.line}
+		} else {
+			tok = l.newToken(token.ILLEGAL, l.ch)
+		}
+	case '|':
+		if l.peekChar() == '|' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.OR, Literal: literal, Line: l.line}
+		} else {
+			tok = l.newToken(token.ILLEGAL, l.ch)
+		}
 	case '[':
 		tok = l.newToken(token.LBRACKET, l.ch)
 	case ']':
 		tok = l.newToken(token.RBRACKET, l.ch)
 	case ':':
 		tok = l.newToken(token.COLON, l.ch)
+	case '.':
+		tok = l.newToken(token.DOT, l.ch)
 	case '"':
 		tok.Type = token.STRING
 		tok.Literal = l.readString()
 		tok.Line = l.line
 	case '/':
-		tok = l.newToken(token.SLASH, l.ch)
+		if l.peekChar() == '/' {
+			l.skipComment()
+			goto Outer
+		} else {
+			tok = l.newToken(token.SLASH, l.ch)
+		}
 	case '*':
 		tok = l.newToken(token.ASTERISK, l.ch)
 	case '<':
-		tok = l.newToken(token.LT, l.ch)
+		if l.peekChar() == '=' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.LTEQ, Literal: literal, Line: l.line}
+		} else {
+			tok = l.newToken(token.LT, l.ch)
+		}
 	case '>':
-		tok = l.newToken(token.GT, l.ch)
+		if l.peekChar() == '=' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.GTEQ, Literal: literal, Line: l.line}
+		} else {
+			tok = l.newToken(token.GT, l.ch)
+		}
 	case ';':
 		tok = l.newToken(token.SEMICOLON, l.ch)
 	case ',':
@@ -144,6 +184,15 @@ func (l *Lexer) readNumber() string {
 
 func isDigit(ch byte) bool {
 	return '0' <= ch && ch <= '9'
+}
+
+func (l *Lexer) skipComment() {
+	for l.ch != '\n' && l.ch != 0 {
+		l.readChar()
+		if l.ch == '\n' {
+			l.line++
+		}
+	}
 }
 
 func (l *Lexer) skipWhitespace() {

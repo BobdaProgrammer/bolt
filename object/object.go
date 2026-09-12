@@ -14,17 +14,20 @@ type BuiltinFunction func(args ...Object) Object
 type ObjectType string
 
 const (
-	NULL_OBJ         = "NULL"
-	INTEGER_OBJ      = "INTEGER"
-	BOOLEAN_OBJ      = "BOOLEAN"
-	ERROR_OBJ        = "ERROR"
-	RETURN_VALUE_OBJ = "RETURN_VALUE"
-	FUNCTION_OBJ     = "FUNCTION"
-	STRING_OBJ       = "STRING"
-	ARRAY_OBJ        = "ARRAY"
-	BUILTIN_OBJ      = "BUILTIN"
-	HASH_OBJ         = "HASH"
-	FLOAT_OBJ        = "FLOAT"
+	NULL_OBJ            = "NULL"
+	INTEGER_OBJ         = "INTEGER"
+	BOOLEAN_OBJ         = "BOOLEAN"
+	ERROR_OBJ           = "ERROR"
+	RETURN_VALUE_OBJ    = "RETURN_VALUE"
+	FUNCTION_OBJ        = "FUNCTION"
+	STRING_OBJ          = "STRING"
+	ARRAY_OBJ           = "ARRAY"
+	BUILTIN_OBJ         = "BUILTIN"
+	HASH_OBJ            = "HASH"
+	FLOAT_OBJ           = "FLOAT"
+	STRUCT_OBJ          = "STRUCT"
+	STRUCT_INSTANCE_OBJ = "STRUCT_INSTANCE"
+	BREAK_OBJ           = "BREAK"
 )
 
 type Builtin struct {
@@ -178,3 +181,36 @@ func (h *Hash) Inspect() string {
 type Hashable interface {
 	HashKey() HashKey
 }
+
+type Break struct{}
+
+func (b *Break) Inspect() string  { return "break" }
+func (b *Break) Type() ObjectType { return BREAK_OBJ }
+
+type StructType struct {
+	Name   *ast.Identifier
+	Fields []*ast.Identifier
+}
+
+func (st *StructType) Inspect() string {
+	fields := []string{}
+	for _, f := range st.Fields {
+		fields = append(fields, f.Value)
+	}
+	return "struct " + st.Name.Value + " { " + strings.Join(fields, ", ") + "}"
+}
+func (st *StructType) Type() ObjectType { return STRUCT_OBJ }
+
+type StructInstance struct {
+	Fields map[ast.Identifier]Object
+}
+
+func (si *StructInstance) Inspect() string {
+	fields := []string{}
+	for id, val := range si.Fields {
+		fields = append(fields, id.String()+" : "+val.Inspect())
+	}
+	return "{" + strings.Join(fields, ", ") + "}"
+}
+
+func (si *StructInstance) Type() ObjectType { return STRUCT_INSTANCE_OBJ }

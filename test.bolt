@@ -1,7 +1,7 @@
-let map = fn(arr, f){
+let map = fn(arr, f){ // Map function
     let iter = fn(arr, accumulated) {
         if len(arr) == 0{
-            accumulated
+            accumulated // return accumulated
         }else{
             let l = len(arr);
             let rstart = 1;
@@ -20,4 +20,4 @@ let double = fn(item){
     return item * 2
 }
 
-map([1.5,2.2,3,4,5], double)
+map([1.5,2.2,3,4,5,true], double)

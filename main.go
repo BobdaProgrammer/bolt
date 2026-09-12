@@ -18,7 +18,7 @@ func main() {
 	}
 	fmt.Printf("Hello %s! This is the bolt programming language\n", user.Username)
 	if len(os.Args) < 2 {
-		repl.Start(os.Stdin, os.Stdout)
+		repl.Start()
 	} else {
 		file := os.Args[1]
 		dat, err := os.ReadFile(file)
@@ -34,7 +34,7 @@ func main() {
 			return
 		}
 
-		env := object.NewEnvironment()
+		env := object.NewEnvironment(false)
 		evaluated := evaluator.Eval(program, env)
 		if evaluated != nil {
 			fmt.Println(fmt.Sprint(evaluated.Inspect(), "\n"))

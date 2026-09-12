@@ -7,56 +7,59 @@ import (
 	"bolt/object"
 	"bolt/parser"
 	"bolt/token"
-	"bufio"
 	"fmt"
+	"github.com/ergochat/readline"
 	"io"
 	"strings"
 )
 
 const PROMPT = "~ $ "
 
-func Start(in io.Reader, out io.Writer) {
-	scanner := bufio.NewScanner(in)
-	env := object.NewEnvironment()
+func Start() {
+	rl, err := readline.New(PROMPT)
+	if err != nil {
+		panic(err)
+	}
+	defer rl.Close()
+
+	env := object.NewEnvironment(false)
+
 	for {
-		fmt.Fprint(out, PROMPT)
-		scanned := scanner.Scan()
-		if !scanned {
+		line, err := rl.ReadLine()
+		if err != nil {
 			return
 		}
 
-		line := scanner.Text()
 		l := lexer.New(line)
 
-		fmt.Fprint(out, "------------ LEXER -------------\n")
+		fmt.Fprint(rl, "------------ LEXER -------------\n")
 
 		for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() {
-			fmt.Fprintf(out, "%+v\n", tok)
+			fmt.Fprintf(rl, "%+v\n", tok)
 		}
 
-		fmt.Fprint(out, "\n\n----------- PARSER & AST ------------\n")
+		fmt.Fprint(rl, "\n\n----------- PARSER & AST ------------\n")
+
 		l = lexer.New(line)
 		p := parser.New(l)
 		program := p.ParseProgram()
+
 		if len(p.Errors()) != 0 {
-			printParserErrors(out, p.Errors())
+			printParserErrors(rl, p.Errors())
 			continue
 		}
 
-		createAST(0, out, program.Statements)
+		createAST(0, rl, program.Statements)
 
-		fmt.Fprint(out, "\n-- parser string --\n")
+		fmt.Fprint(rl, "\n-- parser string --\n")
+		fmt.Fprintln(rl, program.String())
 
-		io.WriteString(out, program.String())
-		io.WriteString(out, "\n")
-
-		fmt.Fprint(out, "\n---------- EVALUATOR ----------\n")
+		fmt.Fprint(rl, "\n---------- EVALUATOR ----------\n")
 
 		evaluated := evaluator.Eval(program, env)
 		if evaluated != nil {
-			io.WriteString(out, fmt.Sprint(evaluated.Inspect(), "\n"))
+			fmt.Fprintln(rl, evaluated.Inspect())
 		}
-
 	}
 }
 
@@ -108,7 +111,7 @@ func expressionStatementAST(indent int, out io.Writer, es *ast.ExpressionStateme
 		if f.Alternative != nil {
 			fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Alternative:"))
 			indent++
-			createAST(indent, out, f.Alternative.Statements)
+			expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: f.Alternative})
 			indent--
 		}
 		indent -= 2

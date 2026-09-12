@@ -24,6 +24,13 @@ func isError(obj object.Object) bool {
 	return false
 }
 
+func isBreak(obj object.Object) bool {
+	if obj != nil {
+		return obj.Type() == object.BREAK_OBJ
+	}
+	return false
+}
+
 func Eval(node ast.Node, env *object.Environment) object.Object {
 	switch node := node.(type) {
 	case *ast.Program:
@@ -36,6 +43,15 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return &object.Float{Value: node.Value}
 	case *ast.HashLiteral:
 		return evalHashLiteral(node, env)
+	case *ast.StructType:
+		evalStructStatement(node, env)
+		break
+	case *ast.BreakStatement:
+		if env.InFor {
+			return &object.Break{}
+		} else {
+			return newError("Cannot use break statement when not in for loop")
+		}
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(node.Value)
 	case *ast.PrefixExpression:
@@ -55,7 +71,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return evalInfixExpression(node.Operator, left, right)
 	case *ast.BlockStatement:
-		return evalBlockStatement(node, env)
+		return evalBlockStatement(node, env, false)
 	case *ast.IfExpression:
 		return evalIfExpression(node, env)
 	case *ast.ReturnStatement:
@@ -76,6 +92,14 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		params := node.Parameters
 		body := node.Body
 		return &object.Function{Parameters: params, Body: body, Env: env}
+	case *ast.ForExpression:
+		return evalForExpression(node, env)
+	case *ast.FieldAccess:
+		left := Eval(node.Left, env)
+		if isError(left) {
+			return left
+		}
+		return evalFieldAccess(left, node.Right)
 	case *ast.CallExpression:
 		function := Eval(node.Function, env)
 		if isError(function) {
@@ -104,6 +128,12 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return index
 		}
 		return evalIndexExpression(left, index)
+	case *ast.StructInstantiation:
+		left := Eval(node.Left, env)
+		if isError(left) {
+			return left
+		}
+		return evalStructInstantiation(left, node, env)
 	case *ast.SliceExpression:
 		left := Eval(node.Left, env)
 		if isError(left) {
@@ -120,6 +150,131 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return evalSliceExpression(left, firstInd, secondInd)
 	}
 	return nil
+}
+
+func evalFieldAccess(left object.Object, right ast.Expression) object.Object {
+	switch left := left.(type) {
+	case *object.StructInstance:
+		if r, ok := right.(*ast.Identifier); ok {
+			value, ok := left.Fields[*r]
+			if !ok {
+				return newError("Struct %s Has no field %s", left.Type(), right.String())
+			}
+			return value
+		} else {
+			return newError("Cannot use non identifier to access struct field. Got=%s", right.String())
+		}
+	}
+	return nil
+}
+
+func evalStructInstantiation(left object.Object, node *ast.StructInstantiation, env *object.Environment) object.Object {
+	if left.Type() != object.STRUCT_OBJ {
+		return newError("Cannot instantiate struct from ", left.Type())
+	}
+	st := &object.StructInstance{Fields: map[ast.Identifier]object.Object{}}
+	for f, val := range node.Fields {
+		value := Eval(val, env)
+		if isError(value) {
+			return value
+		}
+		st.Fields[f] = value
+	}
+	return st
+}
+
+func evalStructStatement(node *ast.StructType, env *object.Environment) object.Object {
+	st := &object.StructType{Name: node.Name, Fields: node.Fields}
+	env.Set(st.Name.Value, st)
+	return NULL
+}
+
+func evalForExpression(node *ast.ForExpression, env *object.Environment) object.Object {
+	forEnv := object.NewEnclosedEnvironment(env, true)
+	ranging := false
+	secondVal := false
+	var rang *ast.RangeExpression = nil
+	if ran, ok := node.Condition.(*ast.RangeExpression); ok {
+		ranging = true
+		rang = ran
+		forEnv.Set(ran.Val1.Token.Literal, &object.Integer{})
+		if ran.Val2 != nil {
+			secondVal = true
+			forEnv.Set(ran.Val2.Token.Literal, nil)
+		}
+	}
+	if !ranging {
+		for {
+			cond := Eval(node.Condition, forEnv)
+			if isError(cond) {
+				return cond
+			}
+			if isTruthy(cond) {
+				conseq := evalBlockStatement(node.Consequence, forEnv, true)
+				if isError(conseq) {
+					return conseq
+				}
+				if isBreak(conseq) {
+					return NULL
+				}
+			} else {
+				break
+			}
+		}
+	} else {
+		r := Eval(rang.Ranging, env)
+		if isError(r) {
+			return r
+		}
+		switch r.(type) {
+		case *object.Array:
+			arr := r.(*object.Array)
+			for x, y := range arr.Elements {
+				forEnv.Set(rang.Val1.Token.Literal, &object.Integer{Value: int64(x)})
+				if secondVal {
+					forEnv.Set(rang.Val2.Token.Literal, y)
+				}
+				conseq := evalBlockStatement(node.Consequence, forEnv, true)
+				if isError(conseq) {
+					return conseq
+				}
+				if isBreak(conseq) {
+					return NULL
+				}
+			}
+		case *object.Hash:
+			dict := r.(*object.Hash)
+			for _, pair := range dict.Pairs {
+				forEnv.Set(rang.Val1.Token.Literal, pair.Key)
+				if secondVal {
+					forEnv.Set(rang.Val2.Token.Literal, pair.Value)
+				}
+				conseq := evalBlockStatement(node.Consequence, forEnv, true)
+				if isError(conseq) {
+					return conseq
+				}
+				if isBreak(conseq) {
+					return NULL
+				}
+			}
+		case *object.String:
+			str := r.(*object.String)
+			for x, y := range str.Value {
+				forEnv.Set(rang.Val1.Token.Literal, &object.Integer{Value: int64(x)})
+				if secondVal {
+					forEnv.Set(rang.Val2.Token.Literal, &object.String{Value: string(y)})
+				}
+				conseq := evalBlockStatement(node.Consequence, forEnv, true)
+				if isError(conseq) {
+					return conseq
+				}
+				if isBreak(conseq) {
+					return NULL
+				}
+			}
+		}
+	}
+	return NULL
 }
 
 func evalHashLiteral(node *ast.HashLiteral, env *object.Environment) object.Object {
@@ -220,7 +375,7 @@ func applyFunction(fn object.Object, args []object.Object) object.Object {
 }
 
 func extendFunctionEnv(fn *object.Function, args []object.Object) *object.Environment {
-	env := object.NewEnclosedEnvironment(fn.Env)
+	env := object.NewEnclosedEnvironment(fn.Env, false)
 	for paramIdx, param := range fn.Parameters {
 		env.Set(param.Value, args[paramIdx])
 	}
@@ -260,7 +415,7 @@ func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object
 }
 
 // In the evalProgram, nested returns wouldn't work. This is because it only stops for a return if the current statement type is a return value. This is a problem because eva:Program could be on a if expression for example and even if that if statement has a return inside that returns something it wouldn't use that value since it has been given the return value and not the return type. This means that when it checks if the value is a statement, it will be false since the return value isnt a return statement but an expression like an integer or boolean. However, with this implementation, if we are on an if statement with a return inside, when the return is evaluated, the value isn't passed back up, the statement is. This therefore means that it does register that there is a return block since it is given a whole statement.
-func evalBlockStatement(block *ast.BlockStatement, env *object.Environment) object.Object {
+func evalBlockStatement(block *ast.BlockStatement, env *object.Environment, inFor bool) object.Object {
 	var result object.Object
 
 	for _, statement := range block.Statements {
@@ -268,7 +423,7 @@ func evalBlockStatement(block *ast.BlockStatement, env *object.Environment) obje
 
 		if result != nil {
 			rt := result.Type()
-			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
+			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ || (inFor && rt == object.BREAK_OBJ) {
 				return result
 			}
 		}
@@ -282,9 +437,9 @@ func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Obje
 		return condition
 	}
 	if isTruthy(condition) {
-		return Eval(ie.Consequence, env)
+		return Eval(ie.Consequence, object.NewEnclosedEnvironment(env, false))
 	} else if ie.Alternative != nil {
-		return Eval(ie.Alternative, env)
+		return Eval(ie.Alternative, object.NewEnclosedEnvironment(env, false))
 	} else {
 		return NULL
 	}
@@ -312,6 +467,11 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 			return newError("Unknown right side of infix expression: nil")
 		}
 	}
+
+	if operator == "&&" || operator == "||" {
+		return evalBooleanOperatorInfixExpression(operator, left, right)
+	}
+
 	switch {
 	case left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
@@ -378,6 +538,16 @@ func evalStringInfixExpression(operator string, left, right object.Object) objec
 	return &object.String{Value: leftVal + rightVal}
 }
 
+func evalBooleanOperatorInfixExpression(operator string, left, right object.Object) object.Object {
+	switch operator {
+	case "&&":
+		return nativeBoolToBooleanObject(isTruthy(left) && isTruthy(right))
+	case "||":
+		return nativeBoolToBooleanObject(isTruthy(left) || isTruthy(right))
+	default:
+		return newError("Unknown operator '%s' in: %s %s %s", operator, left.Type(), operator, right.Type())
+	}
+}
 func evalBooleanInfixExpression(operator string, left, right object.Object) object.Object {
 	switch operator {
 	case "==":
@@ -405,6 +575,10 @@ func evalFloatInfixExpression(operator string, left, right object.Object) object
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case ">":
 		return nativeBoolToBooleanObject(leftVal > rightVal)
+	case "<=":
+		return nativeBoolToBooleanObject(leftVal <= rightVal)
+	case ">=":
+		return nativeBoolToBooleanObject(leftVal >= rightVal)
 	case "==":
 		return nativeBoolToBooleanObject(leftVal == rightVal)
 	case "!=":
@@ -429,6 +603,10 @@ func evalIntegerInfixExpression(operator string, left, right object.Object) obje
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case ">":
 		return nativeBoolToBooleanObject(leftVal > rightVal)
+	case "<=":
+		return nativeBoolToBooleanObject(leftVal <= rightVal)
+	case ">=":
+		return nativeBoolToBooleanObject(leftVal >= rightVal)
 	case "==":
 		return nativeBoolToBooleanObject(leftVal == rightVal)
 	case "!=":

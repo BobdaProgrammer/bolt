@@ -50,3 +50,18 @@ if x==1 {
     log("My programming language doesn't work")
 }
 ```
+
+### Loops
+```go
+let myArr = [0,1,2,3]
+for ind, x = range myArr{
+    log("Index:",ind,"Value:", x)
+}
+
+let a = true
+for a {
+    if 2==2{
+        let a = false
+    }
+}
+```

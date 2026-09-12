@@ -54,4 +54,17 @@ var builtins = map[string]*object.Builtin{
 			return NULL
 		},
 	},
+	"keys": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return wna(1, len(args))
+			}
+			dict := args[0].(*object.Hash)
+			arr := []object.Object{}
+			for _, val := range dict.Pairs {
+				arr = append(arr, val.Key)
+			}
+			return &object.Array{Elements: arr}
+		},
+	},
 }

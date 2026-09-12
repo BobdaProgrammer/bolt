@@ -19,6 +19,8 @@ type Parser struct {
 	peekToken token.Token
 	errors    []string
 
+	currParsing int
+
 	prefixParseFns map[token.TokenType]prefixParseFn
 	infixParseFns  map[token.TokenType]infixParseFn
 }
@@ -41,20 +43,163 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.STRING, p.parseStringLiteral)
 	p.registerPrefix(token.LBRACKET, p.parseArrayLiteral)
 	p.registerPrefix(token.LBRACE, p.parseHashLiteral)
+	p.registerPrefix(token.FOR, p.parseForExpression)
+	p.registerPrefix(token.NEW, p.parseStructInstantiation)
 
 	p.infixParseFns = make(map[token.TokenType]infixParseFn)
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
 	p.registerInfix(token.MINUS, p.parseInfixExpression)
+	p.registerInfix(token.AND, p.parseInfixExpression)
+	p.registerInfix(token.OR, p.parseInfixExpression)
 	p.registerInfix(token.SLASH, p.parseInfixExpression)
 	p.registerInfix(token.ASTERISK, p.parseInfixExpression)
 	p.registerInfix(token.EQ, p.parseInfixExpression)
 	p.registerInfix(token.NOT_EQ, p.parseInfixExpression)
 	p.registerInfix(token.LT, p.parseInfixExpression)
 	p.registerInfix(token.GT, p.parseInfixExpression)
+	p.registerInfix(token.LTEQ, p.parseInfixExpression)
+	p.registerInfix(token.GTEQ, p.parseInfixExpression)
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
 	p.registerInfix(token.LBRACKET, p.parseArrayCallExpression)
+	p.registerInfix(token.DOT, p.parseFieldAccess)
 	return p
 }
+
+func (p *Parser) parseFieldAccess(left ast.Expression) ast.Expression {
+	fa := &ast.FieldAccess{Token: p.curToken, Left: left}
+	p.nextToken()
+	right := p.parseExpression(LOWEST)
+	fa.Right = right
+	return fa
+}
+
+func (p *Parser) parseStructInstantiation() ast.Expression {
+	p.nextToken()
+	left := p.parseExpression(LOWEST)
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	sti := &ast.StructInstantiation{Token: p.curToken, Left: left}
+	fields := map[ast.Identifier]ast.Expression{}
+	for !p.peekTokenIs(token.EOF) {
+		p.nextToken()
+		ident := p.parseIdentifier().(*ast.Identifier)
+		if !p.expectPeek(token.COLON) {
+			p.errors = append(p.errors, fmt.Sprintf("Expected colon in between struct value assignment. got=%s . line=%d", p.peekToken.Literal, p.curToken.Line))
+			return nil
+		}
+		p.nextToken()
+		val := p.parseExpression(LOWEST)
+		fields[*ident] = val
+		if p.peekTokenIs(token.RBRACE) {
+			p.nextToken()
+			break
+		} else if !p.expectPeek(token.COMMA) {
+			return nil
+		}
+
+	}
+	sti.Fields = fields
+	return sti
+}
+
+func (p *Parser) parseStructType() ast.Statement {
+	s := &ast.StructType{Token: p.curToken}
+	p.nextToken()
+	if p.curTokenIs(token.LBRACE) {
+		p.errors = append(p.errors, fmt.Sprintf("Struct types must be in format: struct <Identifier> {}. Identifier is missing. got { . line=%d", p.curToken.Line))
+		return nil
+	}
+	s.Name = p.parseIdentifier().(*ast.Identifier)
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	s.Fields = []*ast.Identifier{}
+	for !p.peekTokenIs(token.RBRACE) || !p.peekTokenIs(token.EOF) {
+		ident := p.parseIdentifier().(*ast.Identifier)
+		s.Fields = append(s.Fields, ident)
+		if p.peekTokenIs(token.RBRACE) {
+			p.nextToken()
+			break
+		} else if !p.expectPeek(token.COMMA) {
+			p.errors = append(p.errors, fmt.Sprintf("Expected comma between struct field values. Line=%d", p.curToken.Line))
+			return nil
+		}
+		p.nextToken()
+	}
+	return s
+}
+
+func (p *Parser) parseBreakStatement() ast.Statement {
+	return &ast.BreakStatement{Token: p.curToken}
+}
+
+func (p *Parser) parseForExpression() ast.Expression {
+	f := &ast.ForExpression{Token: p.curToken}
+	p.nextToken()
+	tok := p.curToken
+	if p.curTokenIs(token.LBRACE) {
+		f.Condition = &ast.Boolean{Value: true}
+	} else {
+		f.Condition = p.parseExpression(LOWEST)
+		if p.peekTokenIs(token.COMMA) || p.peekTokenIs(token.ASSIGN) {
+			// for val = range arr
+			p.nextToken()
+			val1, ok := f.Condition.(*ast.Identifier)
+			if !ok {
+				p.errors = append(p.errors, fmt.Sprintf("Expected identifier token in range expression. got %s . line=%d", p.curToken.Type, p.curToken.Line))
+				return nil
+			}
+			exp := &ast.RangeExpression{Token: tok, Val1: val1}
+			if p.curTokenIs(token.COMMA) {
+				p.nextToken()
+				//exp.Val2
+				val2, ok := p.parseIdentifier().(*ast.Identifier)
+				if ok {
+					exp.Val2 = val2
+				} else {
+					p.errors = append(p.errors, fmt.Sprintf("Expected identifier in range expression, got %s . line=%d", val2.Token.Type, p.curToken.Line))
+					return nil
+				}
+				p.nextToken()
+			}
+			if !p.curTokenIs(token.ASSIGN) {
+				p.errors = append(p.errors, fmt.Sprintf("Expected equal token in range expression. got %s . line=%d", p.curToken.Type, p.curToken.Line))
+				return nil
+			}
+			if !p.expectPeek(token.RANGE) {
+				return nil
+			}
+			if p.peekTokenIs(token.LBRACE) {
+				p.errors = append(p.errors, fmt.Sprintf("Need an expression to range over inside of for loop range expression. got } . line=%d", p.curToken.Line))
+				return nil
+			}
+			p.nextToken()
+			exp.Ranging = p.parseExpression(LOWEST)
+			if !p.expectPeek(token.LBRACE) {
+				return nil
+			}
+			f.Condition = exp
+
+		} else if !p.expectPeek(token.LBRACE) {
+			return nil
+		}
+	}
+	f.Consequence = p.parseBlockStatement()
+	return f
+}
+
+// func (p *Parser) parseForExpression() ast.Expression {
+// 	f := &ast.ForExpression{Token: p.curToken}
+// 	p.nextToken()
+// 	f.Condition = p.parseExpression(LOWEST)
+// 	if !p.expectPeek(token.LBRACE) {
+// 		return nil
+// 	}
+// 	f.Consequence = p.parseBlockStatement()
+// 	return f
+// }
 
 func (p *Parser) parseHashLiteral() ast.Expression {
 	hash := &ast.HashLiteral{Token: p.curToken}
@@ -206,11 +351,70 @@ func (p *Parser) parseIfExpression() ast.Expression {
 
 	if p.peekTokenIs(token.ELSE) {
 		p.nextToken()
-		if !p.expectPeek(token.LBRACE) {
+		// ELSE IF
+		if p.peekTokenIs(token.IF) {
+			curExp := &ast.IfExpression{}
+			expression.Alternative = curExp
+			// else if x == 3 {
+			// code...
+			//} else if x== 4{
+			//code..
+			//} else{
+			//code
+			//}
+			for {
+				curExp.Alternative = &ast.IfExpression{
+					Token: p.curToken,
+				}
+				p.nextToken()
+				if p.peekTokenIs(token.LBRACE) {
+					msg := fmt.Sprintf("Else if needs condition, got { . line=%d", p.curToken.Line)
+					p.errors = append(p.errors, msg)
+					return nil
+				}
+				p.nextToken()
+
+				curExp.Condition = p.parseExpression(LOWEST)
+
+				if !p.expectPeek(token.LBRACE) {
+					return nil
+				}
+
+				curExp.Consequence = p.parseBlockStatement()
+
+				if !p.peekTokenIs(token.ELSE) {
+					curExp.Alternative = nil
+					break
+				}
+				p.nextToken()
+				if !p.peekTokenIs(token.IF) {
+					if !p.expectPeek(token.LBRACE) {
+						return nil
+					}
+					curExp.Alternative = &ast.IfExpression{
+						Token:       p.curToken,
+						Condition:   nil,
+						Consequence: p.parseBlockStatement(),
+						Alternative: nil,
+					}
+					break
+				}
+
+				curExp.Alternative = &ast.IfExpression{}
+				curExp = curExp.Alternative
+
+			}
+		} else if !p.expectPeek(token.LBRACE) {
 			return nil
+		} else {
+			expression.Alternative = &ast.IfExpression{
+				Token:       p.curToken,
+				Condition:   nil,
+				Consequence: p.parseBlockStatement(),
+				Alternative: nil,
+			}
 		}
 
-		expression.Alternative = p.parseBlockStatement()
 	}
 
 	return expression
@@ -319,7 +523,7 @@ func (p *Parser) Errors() []string {
 }
 
 func (p *Parser) peekError(t token.TokenType) {
-	msg := fmt.Sprintf("expected next token to be %s, got %s instead. Line %d", t, p.peekToken.Type, p.peekToken.Line)
+	msg := fmt.Sprintf("expected next token to be ` %s `  got %s instead. Line %d", t, p.peekToken.Type, p.peekToken.Line)
 	p.errors = append(p.errors, msg)
 }
 
@@ -349,6 +553,10 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseLetStatement()
 	case token.RETURN:
 		return p.parseReturnStatement()
+	case token.BREAK:
+		return p.parseBreakStatement()
+	case token.STRUCT:
+		return p.parseStructType()
 	default:
 		return p.parseExpressionStatement()
 	}
@@ -357,6 +565,8 @@ func (p *Parser) parseStatement() ast.Statement {
 const (
 	_ int = iota
 	LOWEST
+	AND         // &&
+	OR          // ||
 	EQUALS      // ==
 	LESSGREATER // > or <
 	SUM         // +
@@ -364,6 +574,7 @@ const (
 	PREFIX      // !X or -X
 	CALL        // myFunc()
 	INDEX       // myArray[0]
+	FIELDACCESS // Val.field
 )
 
 var precedences = map[token.TokenType]int{
@@ -371,12 +582,17 @@ var precedences = map[token.TokenType]int{
 	token.NOT_EQ:   EQUALS,
 	token.LT:       LESSGREATER,
 	token.GT:       LESSGREATER,
+	token.LTEQ:     LESSGREATER,
+	token.GTEQ:     LESSGREATER,
 	token.PLUS:     SUM,
 	token.MINUS:    SUM,
 	token.SLASH:    PRODUCT,
 	token.ASTERISK: PRODUCT,
 	token.LPAREN:   CALL,
 	token.LBRACKET: INDEX,
+	token.DOT:      FIELDACCESS,
+	token.AND:      AND,
+	token.OR:       OR,
 }
 
 func (p *Parser) curPrecedence() int {

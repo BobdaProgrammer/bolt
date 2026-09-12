@@ -43,6 +43,17 @@ func (p *Program) TokenLiteral() string {
 	}
 }
 
+type BreakStatement struct {
+	Token token.Token
+}
+
+func (ls *BreakStatement) String() string {
+	return "break"
+}
+
+func (ls *BreakStatement) statementNode()       {}
+func (ls *BreakStatement) TokenLiteral() string { return ls.Token.Literal }
+
 type LetStatement struct {
 	Token token.Token
 	Name  *Identifier
@@ -180,7 +191,7 @@ type IfExpression struct {
 	Token       token.Token
 	Condition   Expression
 	Consequence *BlockStatement
-	Alternative *BlockStatement
+	Alternative *IfExpression
 }
 
 func (ie *IfExpression) expressionNode() {}
@@ -188,9 +199,11 @@ func (ie *IfExpression) expressionNode() {}
 func (ie *IfExpression) TokenLiteral() string { return ie.Token.Literal }
 func (ie *IfExpression) String() string {
 	var out bytes.Buffer
-
+	// TODO: handle else if
 	out.WriteString("if")
-	out.WriteString(ie.Condition.String())
+	if ie.Condition != nil {
+		out.WriteString(ie.Condition.String())
+	}
 	out.WriteString(" ")
 	out.WriteString(ie.Consequence.String())
 	if ie.Alternative != nil {
@@ -337,3 +350,74 @@ func (hl *HashLiteral) String() string {
 
 	return "{" + strings.Join(pairs, ", ") + "}"
 }
+
+type ForExpression struct {
+	Token       token.Token
+	Condition   Expression
+	Consequence *BlockStatement
+}
+
+func (fe *ForExpression) expressionNode()      {}
+func (fe *ForExpression) TokenLiteral() string { return fe.Token.Literal }
+func (fe *ForExpression) String() string {
+	return "for " + fe.Condition.String() + "{\n" + fe.Consequence.String() + "\n}"
+}
+
+type RangeExpression struct {
+	Token   token.Token
+	Val1    *Identifier
+	Val2    *Identifier
+	Ranging Expression
+}
+
+func (re *RangeExpression) expressionNode()      {}
+func (re *RangeExpression) TokenLiteral() string { return re.Token.Literal }
+func (re *RangeExpression) String() string {
+	val2str := ""
+	if re.Val2 != nil {
+		val2str = ", " + re.Val2.String()
+	}
+	return re.Val1.String() + val2str + " = range " + re.Ranging.String()
+}
+
+type StructType struct {
+	Token  token.Token
+	Name   *Identifier
+	Fields []*Identifier
+}
+
+func (st *StructType) statementNode()       {}
+func (st *StructType) TokenLiteral() string { return st.Token.Literal }
+func (st *StructType) String() string {
+	fields := []string{}
+	for _, f := range st.Fields {
+		fields = append(fields, f.Value)
+	}
+	return "struct " + st.Name.Value + " { " + strings.Join(fields, ", ") + "}"
+}
+
+type StructInstantiation struct {
+	Token  token.Token
+	Left   Expression
+	Fields map[Identifier]Expression
+}
+
+func (si *StructInstantiation) expressionNode()      {}
+func (si *StructInstantiation) TokenLiteral() string { return si.Token.Literal }
+func (si *StructInstantiation) String() string {
+	fields := []string{}
+	for id, val := range si.Fields {
+		fields = append(fields, id.String()+" : "+val.String())
+	}
+	return si.Left.String() + " { " + strings.Join(fields, ", ") + "}"
+}
+
+type FieldAccess struct {
+	Token token.Token
+	Left  Expression
+	Right Expression
+}
+
+func (fa *FieldAccess) expressionNode()      {}
+func (fa *FieldAccess) TokenLiteral() string { return fa.Token.Literal }
+func (fa *FieldAccess) String() string       { return fa.Left.String() + "." + fa.Right.String() }
