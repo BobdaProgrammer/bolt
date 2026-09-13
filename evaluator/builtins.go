@@ -3,6 +3,7 @@ package evaluator
 import (
 	"bolt/object"
 	"fmt"
+	//"strconv"
 )
 
 // wna = wrong number of args

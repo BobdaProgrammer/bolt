@@ -36,7 +36,6 @@ func (l *Lexer) readChar() {
 func (l *Lexer) NextToken() token.Token {
 
 	var tok token.Token
-
 Outer:
 	l.skipWhitespace()
 
@@ -161,17 +160,45 @@ Outer:
 }
 
 func (l *Lexer) readString() string {
-	position := l.position + 1
+	str := ""
+
 	for {
 		l.readChar()
-		if l.ch == '\n' {
-			l.line++
-		}
+
 		if l.ch == '"' || l.ch == 0 {
 			break
 		}
+
+		if l.ch == '\\' {
+			l.readChar()
+
+			switch l.ch {
+			case 'n':
+				str += "\n"
+			case 't':
+				str += "\t"
+			case 'r':
+				str += "\r"
+			case '\\':
+				str += "\\"
+			case '"':
+				str += "\""
+			default:
+				// Either error or preserve the escape
+				str += "\\" + string(rune(l.ch))
+			}
+
+			continue
+		}
+
+		if l.ch == '\n' {
+			l.line++
+		}
+
+		str += string(rune(l.ch))
 	}
-	return l.input[position:l.position]
+
+	return str
 }
 
 func (l *Lexer) readNumber() string {
@@ -189,10 +216,6 @@ func isDigit(ch byte) bool {
 func (l *Lexer) skipComment() {
 	for l.ch != '\n' && l.ch != 0 {
 		l.readChar()
-		if l.ch == '\n' {
-			l.line++
-			l.readChar()
-		}
 	}
 }
 

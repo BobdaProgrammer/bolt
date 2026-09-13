@@ -52,6 +52,8 @@ const (
 	AND      = "&&"
 	OR       = "||"
 
+	NEWLINE = "\n"
+
 	LT   = "<"
 	GT   = ">"
 	LTEQ = "<="
