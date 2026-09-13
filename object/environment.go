@@ -8,13 +8,15 @@ func NewEnclosedEnvironment(outer *Environment, inFor bool) *Environment {
 
 func NewEnvironment(inFor bool) *Environment {
 	s := make(map[string]Object)
-	return &Environment{store: s, outer: nil, InFor: inFor}
+	return &Environment{store: s, outer: nil, InFor: inFor, Exports: make(map[string]Object), Exporting: false}
 }
 
 type Environment struct {
-	store map[string]Object
-	outer *Environment
-	InFor bool
+	store     map[string]Object
+	outer     *Environment
+	InFor     bool
+	Exports   map[string]Object
+	Exporting bool
 }
 
 func (e *Environment) Get(name string) (Object, bool) {

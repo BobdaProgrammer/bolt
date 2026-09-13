@@ -1,0 +1,4 @@
+pub let sqrt = fn(num){return num / 2} // ik this isnt sqrt but it is just testing
+pub let pow = fn(num){return num*2} //same here
+pub let double = fn(num){return num *2}
+pub let sum = fn(a,b){return a + b}

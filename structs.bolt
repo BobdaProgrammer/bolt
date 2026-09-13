@@ -1,0 +1,4 @@
+struct math{sqrt}
+struct s{something}
+let m = new math{sqrt: new s{something: 2}, another: new s{bob: 3}}
+m.sqrt

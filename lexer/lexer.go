@@ -191,6 +191,7 @@ func (l *Lexer) skipComment() {
 		l.readChar()
 		if l.ch == '\n' {
 			l.line++
+			l.readChar()
 		}
 	}
 }

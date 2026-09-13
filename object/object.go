@@ -31,7 +31,8 @@ const (
 )
 
 type Builtin struct {
-	Fn BuiltinFunction
+	Line int
+	Fn   BuiltinFunction
 }
 
 func (b *Builtin) Type() ObjectType { return BUILTIN_OBJ }
@@ -43,6 +44,7 @@ type Object interface {
 }
 
 type Integer struct {
+	Line  int
 	Value int64
 }
 
@@ -50,6 +52,7 @@ func (i *Integer) Inspect() string  { return fmt.Sprintf("%d", i.Value) }
 func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
 
 type Float struct {
+	Line  int
 	Value float64
 }
 
@@ -57,6 +60,7 @@ func (f *Float) Inspect() string  { return fmt.Sprintf("%g", f.Value) }
 func (f *Float) Type() ObjectType { return FLOAT_OBJ }
 
 type Boolean struct {
+	Line  int
 	Value bool
 }
 
@@ -69,6 +73,7 @@ func (n *Null) Inspect() string  { return "null" }
 func (n *Null) Type() ObjectType { return NULL_OBJ }
 
 type ReturnValue struct {
+	Line  int
 	Value Object
 }
 
@@ -76,6 +81,7 @@ func (rv *ReturnValue) Inspect() string  { return rv.Value.Inspect() }
 func (rv *ReturnValue) Type() ObjectType { return RETURN_VALUE_OBJ }
 
 type Error struct {
+	Line    int
 	Message string
 }
 
@@ -83,6 +89,7 @@ func (e *Error) Inspect() string  { return "ERROR: " + e.Message }
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
 
 type Function struct {
+	Line       int
 	Parameters []*ast.Identifier
 	Body       *ast.BlockStatement
 	Env        *Environment
@@ -108,6 +115,7 @@ func (f *Function) Inspect() string {
 }
 
 type String struct {
+	Line  int
 	Value string
 }
 
@@ -115,6 +123,7 @@ func (s *String) Type() ObjectType { return STRING_OBJ }
 func (s *String) Inspect() string  { return s.Value }
 
 type Array struct {
+	Line     int
 	Elements []Object
 }
 
@@ -130,6 +139,7 @@ func (ao *Array) Inspect() string {
 }
 
 type HashKey struct {
+	Line  int
 	Type  ObjectType
 	Value uint64
 }
@@ -161,11 +171,13 @@ func (s *String) HashKey() HashKey {
 }
 
 type HashPair struct {
+	Line  int
 	Key   Object
 	Value Object
 }
 
 type Hash struct {
+	Line  int
 	Pairs map[HashKey]HashPair
 }
 
@@ -188,6 +200,7 @@ func (b *Break) Inspect() string  { return "break" }
 func (b *Break) Type() ObjectType { return BREAK_OBJ }
 
 type StructType struct {
+	Line   int
 	Name   *ast.Identifier
 	Fields []*ast.Identifier
 }
@@ -202,6 +215,7 @@ func (st *StructType) Inspect() string {
 func (st *StructType) Type() ObjectType { return STRUCT_OBJ }
 
 type StructInstance struct {
+	Line   int
 	Fields map[string]Object
 }
 

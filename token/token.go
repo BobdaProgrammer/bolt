@@ -21,6 +21,8 @@ var keywords = map[string]TokenType{
 	"break":  BREAK,
 	"struct": STRUCT,
 	"new":    NEW,
+	"import": IMPORT,
+	"pub":    PUB,
 }
 
 func LookupIdent(ident string) TokenType {
@@ -86,4 +88,6 @@ const (
 	BREAK    = "BREAK"
 	STRUCT   = "STRUCT"
 	NEW      = "NEW"
+	IMPORT   = "IMPORT"
+	PUB      = "PUB"
 )

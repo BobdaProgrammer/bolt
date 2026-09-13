@@ -3,7 +3,9 @@ package evaluator
 import (
 	"bolt/ast"
 	"bolt/object"
+	"bolt/utils"
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -46,6 +48,48 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.StructType:
 		evalStructStatement(node, env)
 		break
+	case *ast.PubStatement:
+		env.Exporting = true
+		res := Eval(node.Stmt, env)
+		if isError(res) {
+			return res
+		}
+		env.Exporting = false
+	case *ast.ImportStatement:
+		// Find the new module
+		// If it exists, create new module
+		// lex then parse it
+		// evaluate in the Module environment
+		// get exports
+		// add exports to current environment
+		if !strings.HasSuffix(node.Value, ".bolt") {
+			return newError("Import must be a .bolt file")
+		}
+		if !utils.FileExists(node.Value) {
+			return newError("Cannot find import: %s", node.Value)
+		}
+		path, _ := os.Stat(node.Value)
+		modulename := utils.FileName(path.Name())
+		fmt.Println(modulename)
+		file := utils.ReadFile(path.Name())
+		program, module := utils.ProcessModule(file)
+		if program == nil {
+			return newError("Import file had errors")
+		}
+		res := Eval(program, module.Env)
+		if isError(res) {
+			err := res.(*object.Error)
+			err.Message = "IMPORT " + modulename + ".bolt: " + err.Message
+			return err
+		}
+		moduleStruct := &object.StructInstance{}
+		fields := map[string]object.Object{}
+		for export, value := range module.Env.Exports {
+			fmt.Println("import", export, value)
+			fields[export] = value
+		}
+		moduleStruct.Fields = fields
+		env.Set(modulename, moduleStruct)
 	case *ast.BreakStatement:
 		if env.InFor {
 			return &object.Break{}
@@ -84,6 +128,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		val := Eval(node.Value, env)
 		if isError(val) {
 			return val
+		}
+		if env.Exporting {
+			env.Exports[node.Name.Value] = val
 		}
 		env.Set(node.Name.Value, val)
 	case *ast.Identifier:
@@ -171,11 +218,14 @@ func evalFieldAccess(left object.Object, right ast.Expression, env *object.Envir
 				return args[0]
 			}
 			return applyFunction(value, args)
+		} else if r, ok := right.(*ast.FieldAccess); ok {
+			return evalFieldAccess(left.Fields[r.Left.String()], r.Right, env)
 		} else {
 			return newError("Cannot use non identifier to access struct field. Got=%s", right)
 		}
+	default:
+		return newError("Cannot use field access on %s", left.Type())
 	}
-	return nil
 }
 
 func evalStructInstantiation(left object.Object, node *ast.StructInstantiation, env *object.Environment) object.Object {
@@ -195,6 +245,9 @@ func evalStructInstantiation(left object.Object, node *ast.StructInstantiation, 
 
 func evalStructStatement(node *ast.StructType, env *object.Environment) object.Object {
 	st := &object.StructType{Name: node.Name, Fields: node.Fields}
+	if env.Exporting {
+		env.Exports[st.Name.Value] = st
+	}
 	env.Set(st.Name.Value, st)
 	return NULL
 }

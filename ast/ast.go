@@ -44,6 +44,7 @@ func (p *Program) TokenLiteral() string {
 }
 
 type BreakStatement struct {
+	Line  int
 	Token token.Token
 }
 
@@ -55,6 +56,7 @@ func (ls *BreakStatement) statementNode()       {}
 func (ls *BreakStatement) TokenLiteral() string { return ls.Token.Literal }
 
 type LetStatement struct {
+	Line  int
 	Token token.Token
 	Name  *Identifier
 	Value Expression
@@ -79,6 +81,7 @@ func (ls *LetStatement) statementNode()       {}
 func (ls *LetStatement) TokenLiteral() string { return ls.Token.Literal }
 
 type Identifier struct {
+	Line  int
 	Token token.Token
 	Value string
 }
@@ -90,6 +93,7 @@ func (i *Identifier) expressionNode()      {}
 func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
 
 type ReturnStatement struct {
+	Line        int
 	Token       token.Token
 	ReturnValue Expression
 }
@@ -109,6 +113,7 @@ func (rs *ReturnStatement) statementNode()       {}
 func (rs *ReturnStatement) TokenLiteral() string { return rs.Token.Literal }
 
 type ExpressionStatement struct {
+	Line       int
 	Token      token.Token
 	Expression Expression
 }
@@ -123,6 +128,7 @@ func (es *ExpressionStatement) statementNode()       {}
 func (es *ExpressionStatement) TokenLiteral() string { return es.Token.Literal }
 
 type IntegerLiteral struct {
+	Line  int
 	Token token.Token
 	Value int64
 }
@@ -135,6 +141,7 @@ func (il *IntegerLiteral) expressionNode()      {}
 func (il *IntegerLiteral) TokenLiteral() string { return il.Token.Literal }
 
 type FloatLiteral struct {
+	Line  int
 	Token token.Token
 	Value float64
 }
@@ -144,6 +151,7 @@ func (fl *FloatLiteral) expressionNode()      {}
 func (fl *FloatLiteral) TokenLiteral() string { return fl.Token.Literal }
 
 type PrefixExpression struct {
+	Line     int
 	Token    token.Token
 	Operator string
 	Right    Expression
@@ -161,6 +169,7 @@ func (pe *PrefixExpression) String() string {
 }
 
 type InfixExpression struct {
+	Line     int
 	Token    token.Token
 	Operator string
 	Left     Expression
@@ -177,6 +186,7 @@ func (ie *InfixExpression) String() string {
 }
 
 type Boolean struct {
+	Line  int
 	Token token.Token
 	Value bool
 }
@@ -188,6 +198,7 @@ func (b *Boolean) String() string {
 }
 
 type IfExpression struct {
+	Line        int
 	Token       token.Token
 	Condition   Expression
 	Consequence *BlockStatement
@@ -214,6 +225,7 @@ func (ie *IfExpression) String() string {
 }
 
 type BlockStatement struct {
+	Line       int
 	Token      token.Token
 	Statements []Statement
 }
@@ -231,6 +243,7 @@ func (bs *BlockStatement) String() string {
 }
 
 type FunctionLiteral struct {
+	Line       int
 	Token      token.Token
 	Parameters []*Identifier
 	Body       *BlockStatement
@@ -255,6 +268,7 @@ func (fl *FunctionLiteral) String() string {
 }
 
 type CallExpression struct {
+	Line      int
 	Token     token.Token
 	Function  Expression // Identifier or FunctionLiteral
 	Arguments []Expression
@@ -280,6 +294,7 @@ func (ce *CallExpression) String() string {
 }
 
 type StringLiteral struct {
+	Line  int
 	Token token.Token
 	Value string
 }
@@ -289,6 +304,7 @@ func (sl *StringLiteral) TokenLiteral() string { return sl.Token.Literal }
 func (sl *StringLiteral) String() string       { return sl.TokenLiteral() }
 
 type ArrayLiteral struct {
+	Line     int
 	Token    token.Token
 	Elements []Expression
 }
@@ -311,6 +327,7 @@ func (al *ArrayLiteral) String() string {
 }
 
 type IndexExpression struct {
+	Line  int
 	Token token.Token
 	Left  Expression
 	Index Expression
@@ -323,6 +340,7 @@ func (ie *IndexExpression) String() string {
 }
 
 type SliceExpression struct {
+	Line       int
 	Token      token.Token
 	Left       Expression
 	IndexStart Expression
@@ -336,6 +354,7 @@ func (se *SliceExpression) String() string {
 }
 
 type HashLiteral struct {
+	Line  int
 	Token token.Token
 	Pairs map[Expression]Expression
 }
@@ -352,6 +371,7 @@ func (hl *HashLiteral) String() string {
 }
 
 type ForExpression struct {
+	Line        int
 	Token       token.Token
 	Condition   Expression
 	Consequence *BlockStatement
@@ -364,6 +384,7 @@ func (fe *ForExpression) String() string {
 }
 
 type RangeExpression struct {
+	Line    int
 	Token   token.Token
 	Val1    *Identifier
 	Val2    *Identifier
@@ -381,6 +402,7 @@ func (re *RangeExpression) String() string {
 }
 
 type StructType struct {
+	Line   int
 	Token  token.Token
 	Name   *Identifier
 	Fields []*Identifier
@@ -397,6 +419,7 @@ func (st *StructType) String() string {
 }
 
 type StructInstantiation struct {
+	Line   int
 	Token  token.Token
 	Left   Expression
 	Fields map[string]Expression
@@ -413,6 +436,7 @@ func (si *StructInstantiation) String() string {
 }
 
 type FieldAccess struct {
+	Line  int
 	Token token.Token
 	Left  Expression
 	Right Expression
@@ -421,3 +445,23 @@ type FieldAccess struct {
 func (fa *FieldAccess) expressionNode()      {}
 func (fa *FieldAccess) TokenLiteral() string { return fa.Token.Literal }
 func (fa *FieldAccess) String() string       { return fa.Left.String() + "." + fa.Right.String() }
+
+type ImportStatement struct {
+	Line  int
+	Token token.Token
+	Value string
+}
+
+func (is *ImportStatement) statementNode()       {}
+func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
+func (is *ImportStatement) String() string       { return "import " + is.Value }
+
+type PubStatement struct {
+	Line  int
+	Token token.Token
+	Stmt  Statement
+}
+
+func (p *PubStatement) statementNode()       {}
+func (p *PubStatement) TokenLiteral() string { return p.Token.Literal }
+func (p *PubStatement) String() string       { return "pub " + p.Stmt.String() }

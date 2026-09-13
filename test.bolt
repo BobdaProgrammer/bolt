@@ -1,9 +1,25 @@
-struct Person{name, age}
+//struct Person{name, age}
+//
+//let Person = new Person{name:"jeff", age:25}
+//log(Person.name)
+//let bob = new Person{name:"bob", age:20}
 
-let Person = new Person{name:"jeff", age:25}
-log(Person.name)
-let bob = new Person{name:"bob", age:20}
+import "math.bolt"
 
+struct maths{
+    sqrt,
+    pow,
+    double,
+    sum
+}
+
+
+pub let mathlib = new maths{
+    sqrt: math.sqrt,
+    pow: math.pow,
+    double: math.double,
+    sum: math.sum
+}
 
 
 //let map = fn(arr, f){ // Map function
