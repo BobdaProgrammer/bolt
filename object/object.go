@@ -27,6 +27,7 @@ const (
 	FLOAT_OBJ           = "FLOAT"
 	STRUCT_OBJ          = "STRUCT"
 	STRUCT_INSTANCE_OBJ = "STRUCT_INSTANCE"
+	SPREAD_OBJ          = "SPREAD"
 	BREAK_OBJ           = "BREAK"
 )
 
@@ -203,6 +204,7 @@ func (st *StructType) Type() ObjectType { return STRUCT_OBJ }
 
 type StructInstance struct {
 	Fields map[string]Object
+	StType *StructType
 }
 
 func (si *StructInstance) Inspect() string {
@@ -214,3 +216,18 @@ func (si *StructInstance) Inspect() string {
 }
 
 func (si *StructInstance) Type() ObjectType { return STRUCT_INSTANCE_OBJ }
+
+type Spread struct {
+	Elements []Object
+}
+
+func (sp *Spread) Type() ObjectType { return SPREAD_OBJ }
+func (sp *Spread) Inspect() string {
+	els := []string{}
+
+	for _, el := range sp.Elements {
+		els = append(els, el.Inspect())
+	}
+
+	return strings.Join(els, ", ")
+}

@@ -68,7 +68,7 @@ func createAST(indent int, out io.Writer, stmts []ast.Statement) {
 		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), fmt.Sprintf("%T", stmt)))
 		if let, ok := stmt.(*ast.LetStatement); ok {
 			indent++
-			fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Name: ", let.Name))
+			fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Left: ", let.Left))
 			fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Value expression: ", fmt.Sprintf("%T", let.Value)))
 			indent++
 			expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: let.Value})
@@ -78,7 +78,9 @@ func createAST(indent int, out io.Writer, stmts []ast.Statement) {
 			indent++
 			fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Value expression: "))
 			indent++
-			expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: ret.ReturnValue})
+			for _, val := range ret.ReturnValues {
+				expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: val})
+			}
 		}
 		if es, ok := stmt.(*ast.ExpressionStatement); ok {
 			expressionStatementAST(indent, out, es)

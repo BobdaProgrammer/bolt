@@ -87,7 +87,17 @@ Outer:
 	case ':':
 		tok = l.newToken(token.COLON, l.ch)
 	case '.':
-		tok = l.newToken(token.DOT, l.ch)
+		if l.peekChar() == '.' {
+			l.readChar()
+			if l.peekChar() == '.' {
+				l.readChar()
+				tok = token.Token{Type: token.ELLIPSIS, Literal: "...", Line: l.line}
+			} else {
+				tok = token.Token{Type: token.ILLEGAL, Literal: ".." + string(l.peekChar()), Line: l.line}
+			}
+		} else {
+			tok = l.newToken(token.DOT, l.ch)
+		}
 	case '"':
 		tok.Type = token.STRING
 		tok.Literal = l.readString()
@@ -249,7 +259,7 @@ func isLetter(ch byte) bool {
 
 func (l *Lexer) readIdentifier() string {
 	position := l.position
-	for isLetter(l.ch) {
+	for isLetter(l.ch) || isDigit(l.ch) {
 		l.readChar()
 	}
 	return l.input[position:l.position]

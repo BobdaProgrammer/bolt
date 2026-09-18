@@ -37,6 +37,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FALSE, p.parseBooleanLiteral)
 	p.registerPrefix(token.BANG, p.parsePrefixExpression)
 	p.registerPrefix(token.MINUS, p.parsePrefixExpression)
+	p.registerPrefix(token.ELLIPSIS, p.parsePrefixExpression)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
 	p.registerPrefix(token.IF, p.parseIfExpression)
 	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
@@ -62,7 +63,16 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
 	p.registerInfix(token.LBRACKET, p.parseArrayCallExpression)
 	p.registerInfix(token.DOT, p.parseFieldAccess)
+	p.registerInfix(token.AS, p.parseStructTypeConversion)
 	return p
+}
+
+func (p *Parser) parseStructTypeConversion(left ast.Expression) ast.Expression {
+	structconversion := &ast.StructTypeConversion{Token: p.curToken}
+	structconversion.Left = left.(*ast.Identifier)
+	p.nextToken()
+	structconversion.StType = p.parseIdentifier().(*ast.Identifier)
+	return structconversion
 }
 
 func (p *Parser) parsePubStatement() ast.Statement {
@@ -109,6 +119,11 @@ func (p *Parser) parseStructInstantiation() ast.Expression {
 	}
 	sti := &ast.StructInstantiation{Token: p.curToken, LineNum: p.curToken.Line, Left: left}
 	fields := map[string]ast.Expression{}
+	if p.peekTokenIs(token.RBRACE) {
+		p.nextToken()
+		sti.Fields = fields
+		return sti
+	}
 	for !p.peekTokenIs(token.EOF) {
 		p.nextToken()
 		ident := p.parseIdentifier().(*ast.Identifier)
@@ -275,9 +290,17 @@ func (p *Parser) parseArrayCallExpression(left ast.Expression) ast.Expression {
 		return exp
 	} else if p.expectPeek(token.RBRACKET) {
 		// Index: myArr[1]
-		exp := &ast.IndexExpression{Token: p.curToken, LineNum: p.curToken.Line, Left: left}
-		exp.Index = firstVal
-		return exp
+		if p.peekTokenIs(token.ASSIGN) {
+			p.nextToken()
+			p.nextToken()
+			val := p.parseExpression(LOWEST)
+			exp := &ast.IndexAssignExpression{Token: p.curToken, LineNum: p.curToken.Line, Left: left, Index: firstVal, Value: val}
+			return exp
+		} else {
+			exp := &ast.IndexExpression{Token: p.curToken, LineNum: p.curToken.Line, Left: left}
+			exp.Index = firstVal
+			return exp
+		}
 	} else {
 		return nil
 	}
@@ -604,6 +627,7 @@ const (
 	LESSGREATER // > or <
 	SUM         // +
 	PRODUCT     // *
+	AS          // AS
 	PREFIX      // !X or -X
 	CALL        // myFunc()
 	INDEX       // myArray[0]
@@ -625,6 +649,7 @@ var precedences = map[token.TokenType]int{
 	token.LBRACKET: INDEX,
 	token.DOT:      FIELDACCESS,
 	token.AND:      AND,
+	token.AS:       AS,
 	token.OR:       OR,
 }
 
@@ -685,7 +710,15 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 
 	p.nextToken()
 
-	stmt.ReturnValue = p.parseExpression(LOWEST)
+	first := p.parseExpression(LOWEST)
+	values := []ast.Expression{first}
+	for p.peekTokenIs(token.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		values = append(values, p.parseExpression(LOWEST))
+	}
+
+	stmt.ReturnValues = values
 
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
@@ -697,11 +730,20 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 func (p *Parser) parseLetStatement() *ast.LetStatement {
 	stmt := &ast.LetStatement{Token: p.curToken, LineNum: p.curToken.Line}
 
-	if !p.expectPeek(token.IDENT) {
+	p.nextToken()
+	left := p.parseExpression(LOWEST)
+	if ident, ok := left.(*ast.Identifier); ok {
+		stmt.Left = ident
+	} else if fa, ok := left.(*ast.FieldAccess); ok {
+		stmt.Left = fa
+	} else if arr, ok := left.(*ast.ArrayLiteral); ok {
+		stmt.Left = arr
+	} else if left != nil {
+		p.errors = append(p.errors, fmt.Sprintf("Cannot use type %s on left side of let statement - line=%d", left.String(), left.Line()))
 		return nil
+	} else {
+		p.errors = append(p.errors, fmt.Sprintf("Cannot use that type on left side of let statement - line=%d", p.curToken.Line))
 	}
-
-	stmt.Name = &ast.Identifier{Token: p.curToken, LineNum: p.curToken.Line, Value: p.curToken.Literal}
 
 	if !p.expectPeek(token.ASSIGN) {
 		return nil

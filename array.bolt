@@ -1,0 +1,12 @@
+let arr = [1,2,3,4]
+
+let insert = fn(arr, i, val){
+    if i<0 || i >= len(arr){
+        return "bad index"
+    }
+
+    let newArr = push(push(arr[0:i+1], val), arr[i+1:len(arr)])
+    return newArr
+}
+
+log(insert(arr, 1, "bob"))

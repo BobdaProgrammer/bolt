@@ -62,7 +62,7 @@ func (ls *BreakStatement) TokenLiteral() string { return ls.Token.Literal }
 type LetStatement struct {
 	LineNum int
 	Token   token.Token
-	Name    *Identifier
+	Left    Expression
 	Value   Expression
 }
 
@@ -70,7 +70,7 @@ func (ls *LetStatement) String() string {
 	var out bytes.Buffer
 
 	out.WriteString(ls.TokenLiteral() + " ")
-	out.WriteString(ls.Name.String())
+	out.WriteString(ls.Left.String())
 	out.WriteString(" = ")
 
 	if ls.Value != nil {
@@ -99,17 +99,19 @@ func (i *Identifier) Line() int            { return i.LineNum }
 func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
 
 type ReturnStatement struct {
-	LineNum     int
-	Token       token.Token
-	ReturnValue Expression
+	LineNum      int
+	Token        token.Token
+	ReturnValues []Expression
 }
 
 func (rs *ReturnStatement) String() string {
 	var out bytes.Buffer
 
 	out.WriteString(rs.TokenLiteral() + " ")
-	if rs.ReturnValue != nil {
-		out.WriteString(rs.ReturnValue.String())
+	if rs.ReturnValues != nil {
+		for _, rv := range rs.ReturnValues {
+			out.WriteString(rv.String())
+		}
 	}
 
 	out.WriteString(";")
@@ -359,6 +361,21 @@ func (ie *IndexExpression) String() string {
 	return "(" + ie.Left.String() + "[" + ie.Index.String() + "])"
 }
 
+type IndexAssignExpression struct {
+	LineNum int
+	Token   token.Token
+	Left    Expression
+	Index   Expression
+	Value   Expression
+}
+
+func (ie *IndexAssignExpression) expressionNode()      {}
+func (ie *IndexAssignExpression) Line() int            { return ie.LineNum }
+func (ie *IndexAssignExpression) TokenLiteral() string { return ie.Token.Literal }
+func (ie *IndexAssignExpression) String() string {
+	return ie.Left.String() + "[" + ie.Index.String() + "] = " + ie.Value.String()
+}
+
 type SliceExpression struct {
 	LineNum    int
 	Token      token.Token
@@ -494,3 +511,17 @@ func (p *PubStatement) statementNode()       {}
 func (p *PubStatement) Line() int            { return p.LineNum }
 func (p *PubStatement) TokenLiteral() string { return p.Token.Literal }
 func (p *PubStatement) String() string       { return "pub " + p.Stmt.String() }
+
+type StructTypeConversion struct {
+	Token   token.Token
+	LineNum int
+	StType  *Identifier
+	Left    *Identifier
+}
+
+func (st *StructTypeConversion) expressionNode()      {}
+func (st *StructTypeConversion) Line() int            { return st.LineNum }
+func (st *StructTypeConversion) TokenLiteral() string { return st.Token.Literal }
+func (st *StructTypeConversion) String() string {
+	return st.Left.String() + " as " + st.StType.String()
+}

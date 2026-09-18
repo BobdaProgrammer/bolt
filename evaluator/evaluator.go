@@ -119,20 +119,82 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.IfExpression:
 		return evalIfExpression(node, env)
 	case *ast.ReturnStatement:
-		val := Eval(node.ReturnValue, env)
-		if isError(val) {
-			return val
+		if len(node.ReturnValues) == 0 {
+			return &object.ReturnValue{Value: nil}
 		}
-		return &object.ReturnValue{Value: val}
+		if len(node.ReturnValues) == 1 {
+			val := Eval(node.ReturnValues[0], env)
+			if isError(val) {
+				return val
+			}
+			return &object.ReturnValue{Value: val}
+		}
+		vals := &object.Spread{Elements: []object.Object{}}
+		for _, v := range node.ReturnValues {
+			val := Eval(v, env)
+			if isError(val) {
+				return val
+			}
+			vals.Elements = append(vals.Elements, val)
+		}
+		return &object.ReturnValue{Value: vals}
 	case *ast.LetStatement:
 		val := Eval(node.Value, env)
 		if isError(val) {
 			return val
 		}
-		if env.Exporting {
-			env.Exports[node.Name.Value] = val
+
+		if l, ok := node.Left.(*ast.Identifier); ok {
+			if env.Exporting {
+				env.Exports[l.Value] = val
+			}
+			env.Set(l.Value, val)
+		} else if fa, ok := node.Left.(*ast.FieldAccess); ok {
+			if env.Exporting {
+				return newError("Cannot use pub on field access assignment. Use pub on the struct instance instead - line=%d", node.Line())
+			}
+			left := Eval(fa.Left, env)
+			if isError(left) {
+				return left
+			}
+			ev := evalFieldAccessAssignment(left, fa.Right, val, env)
+			if isError(ev) {
+				return ev
+			}
+		} else if arr, ok := node.Left.(*ast.ArrayLiteral); ok {
+			if val.Type() != object.SPREAD_OBJ {
+				return newError("Cannot use multiple value let statement without multiple values. line=%d", node.Line())
+			}
+			spread := val.(*object.Spread)
+			if len(arr.Elements) > len(spread.Elements) {
+				return newError("Too many values on left side of let statement for multiple return values. Wanted %d, got %d - line=%d", len(spread.Elements), len(arr.Elements))
+			}
+			for i, el := range arr.Elements {
+				if ident, ok := el.(*ast.Identifier); ok {
+					env.Set(ident.Value, spread.Elements[i])
+				} else {
+					return newError("Cannot use non identifier in multiple value let statement, line=%d", node.Line())
+				}
+			}
 		}
-		env.Set(node.Name.Value, val)
+	case *ast.StructTypeConversion:
+		left := Eval(node.Left, env)
+		if isError(left) {
+			return left
+		}
+		if left.Type() != object.STRUCT_INSTANCE_OBJ {
+			return newError("Cannot use struct conversion on non struct type %s - line %d", left.Type(), node.Line())
+		}
+		l := left.(*object.StructInstance)
+		right := Eval(node.StType, env)
+		if isError(right) {
+			return right
+		}
+		if right.Type() != object.STRUCT_OBJ {
+			return newError("Must use struct type as converter in struct conversion, got=%s - line=%d", right.Type(), node.Line())
+		}
+		r := right.(*object.StructType)
+		return evalStructTypeConversion(l, r)
 	case *ast.Identifier:
 		return evalIdentifier(node, env)
 	case *ast.FunctionLiteral:
@@ -160,11 +222,11 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.StringLiteral:
 		return &object.String{Value: node.Value}
 	case *ast.ArrayLiteral:
-		elements := evalExpressions(node.Elements, env)
-		if len(elements) == 1 && isError(elements[0]) {
-			return elements[0]
+		els := evalExpressions(node.Elements, env)
+		if len(els) == 1 && isError(els[0]) {
+			return els[0]
 		}
-		return &object.Array{Elements: elements}
+		return &object.Array{Elements: els}
 	case *ast.IndexExpression:
 		left := Eval(node.Left, env)
 		if isError(left) {
@@ -175,6 +237,33 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return index
 		}
 		return evalIndexExpression(left, index, node.Line())
+	case *ast.IndexAssignExpression:
+		left := Eval(node.Left, env)
+		if isError(left) {
+			return left
+		}
+		index := Eval(node.Index, env)
+		if isError(index) {
+			return index
+		}
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		if left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ {
+			l := left.(*object.Array)
+			i := index.(*object.Integer)
+			if i.Value >= 0 && i.Value < int64(len(l.Elements)) {
+				if value.Type() == object.SPREAD_OBJ {
+					spread := value.(*object.Spread)
+					l.Elements = append(l.Elements[:i.Value], append(spread.Elements, l.Elements[i.Value+1:]...)...)
+				} else {
+					l.Elements[i.Value] = value
+				}
+			} else {
+				return newError("Index out of range %d in %s with length %d - line=%d", i.Value, l.Type(), len(l.Elements), node.LineNum)
+			}
+		}
 	case *ast.StructInstantiation:
 		left := Eval(node.Left, env)
 		if isError(left) {
@@ -197,6 +286,54 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return evalSliceExpression(left, firstInd, secondInd, node.Line())
 	}
 	return nil
+}
+
+func evalStructTypeConversion(left *object.StructInstance, right *object.StructType) object.Object {
+	if len(left.Fields) > len(right.Fields) {
+		return NULL
+	}
+
+	rightnames := map[string]bool{}
+	for _, field := range right.Fields {
+		rightnames[field.Value] = true
+	}
+
+	newStruct := &object.StructInstance{Fields: map[string]object.Object{}, StType: right}
+	for name, val := range left.Fields {
+		if _, ok := rightnames[name]; !ok {
+			return NULL
+		} else {
+			newStruct.Fields[name] = val
+		}
+	}
+	return newStruct
+}
+
+func evalFieldAccessAssignment(left object.Object, right ast.Expression, value object.Object, env *object.Environment) object.Object {
+	switch left := left.(type) {
+	case *object.StructInstance:
+		if r, ok := right.(*ast.Identifier); ok {
+			availableFieldsArr := left.StType.Fields
+			fmt.Println(availableFieldsArr, r.Value)
+			found := false
+			for _, field := range availableFieldsArr {
+				if field.Value == r.Value {
+					found = true
+				}
+			}
+			if !found {
+				return newError("Cannot instantiate struct from %s since %s is not a type - line=%d", left.Type(), left.Type(), right.Line())
+			}
+			left.Fields[r.Value] = value
+			return nil
+		} else if r, ok := right.(*ast.FieldAccess); ok {
+			return evalFieldAccessAssignment(left.Fields[r.Left.String()], r.Right, value, env)
+		} else {
+			return newError("Cannot use non identifier in field access on %s - line=%d", left.Type(), right.Line())
+		}
+	default:
+		return newError("Cannot use field access on %s - line=%d", left.Type(), right.Line())
+	}
 }
 
 func evalFieldAccess(left object.Object, right ast.Expression, env *object.Environment) object.Object {
@@ -232,8 +369,17 @@ func evalStructInstantiation(left object.Object, node *ast.StructInstantiation, 
 	if left.Type() != object.STRUCT_OBJ {
 		return newError("Cannot instantiate struct from %s since %s is not a type - line=%d", left.Type(), left.Type(), node.Line())
 	}
-	st := &object.StructInstance{Fields: map[string]object.Object{}}
+	l := left.(*object.StructType)
+	fields := map[string]bool{}
+	for _, field := range l.Fields {
+		fields[field.Value] = true
+	}
+
+	st := &object.StructInstance{Fields: map[string]object.Object{}, StType: l}
 	for f, val := range node.Fields {
+		if _, ok := fields[f]; !ok {
+			return newError("Struct type %s has no field %s - line=%d", l.Name.Value, f, node.Line())
+		}
 		value := Eval(val, env)
 		if isError(value) {
 			return value
@@ -460,7 +606,14 @@ func evalExpressions(exps []ast.Expression, env *object.Environment) []object.Ob
 		if isError(evaluated) {
 			return []object.Object{evaluated}
 		}
-		result = append(result, evaluated)
+		if evaluated.Type() == object.SPREAD_OBJ {
+			spread := evaluated.(*object.Spread)
+			for _, e := range spread.Elements {
+				result = append(result, e)
+			}
+		} else {
+			result = append(result, evaluated)
+		}
 	}
 	return result
 }
@@ -688,9 +841,19 @@ func evalPrefixExpression(operator string, right object.Object, line int) object
 		return evalBangOperatorExpression(right)
 	case "-":
 		return evalMinusPrefixOperatorExpression(right, line)
+	case "...":
+		return evalEllipsisPrefixOperatorExpression(right, line)
 	default:
 		return newError("unknown operator: %s%s - line=%d", operator, right.Type(), line)
 	}
+}
+
+func evalEllipsisPrefixOperatorExpression(right object.Object, line int) object.Object {
+	if right.Type() != object.ARRAY_OBJ {
+		return newError("Cannot use ellipsis prefix operator on non-array type %s. line=%d", right.Type(), line)
+	}
+	arr := right.(*object.Array)
+	return &object.Spread{Elements: arr.Elements}
 }
 
 func evalMinusPrefixOperatorExpression(right object.Object, line int) object.Object {
