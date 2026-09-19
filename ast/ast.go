@@ -80,10 +80,33 @@ func (ls *LetStatement) String() string {
 	out.WriteString(";")
 	return out.String()
 }
-
 func (ls *LetStatement) statementNode()       {}
 func (ls *LetStatement) Line() int            { return ls.LineNum }
 func (ls *LetStatement) TokenLiteral() string { return ls.Token.Literal }
+
+type AssignExpression struct {
+	LineNum int
+	Token   token.Token
+	Left    Expression
+	Value   Expression
+}
+
+func (as *AssignExpression) String() string {
+	var out bytes.Buffer
+
+	out.WriteString(as.Left.String())
+	out.WriteString(" = ")
+
+	if as.Value != nil {
+		out.WriteString(as.Value.String())
+	}
+
+	out.WriteString(";")
+	return out.String()
+}
+func (as *AssignExpression) expressionNode()      {}
+func (as *AssignExpression) Line() int            { return as.LineNum }
+func (as *AssignExpression) TokenLiteral() string { return as.Token.Literal }
 
 type Identifier struct {
 	LineNum int
@@ -525,3 +548,13 @@ func (st *StructTypeConversion) TokenLiteral() string { return st.Token.Literal 
 func (st *StructTypeConversion) String() string {
 	return st.Left.String() + " as " + st.StType.String()
 }
+
+type Null struct {
+	token.Token
+	LineNum int
+}
+
+func (n *Null) expressionNode()      {}
+func (n *Null) Line() int            { return n.LineNum }
+func (n *Null) TokenLiteral() string { return n.Token.Literal }
+func (n *Null) String() string       { return "null" }

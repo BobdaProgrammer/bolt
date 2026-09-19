@@ -16,8 +16,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("Hello %s! This is the bolt programming language\n", user.Username)
 	if len(os.Args) < 2 {
+		fmt.Printf("Hello %s! This is the bolt programming language\n", user.Username)
 		repl.Start()
 	} else {
 		file := os.Args[1]
@@ -35,10 +35,10 @@ func main() {
 		}
 
 		env := object.NewEnvironment(false)
-		evaluated := evaluator.Eval(program, env)
-		if evaluated != nil {
-			fmt.Println(fmt.Sprint(evaluated.Inspect(), "\n"))
-		}
+		evaluator.Eval(program, env)
+		// if evaluated != nil {
+		// 	fmt.Println(fmt.Sprint(evaluated.Inspect(), "\n"))
+		// }
 	}
 }
 

@@ -50,9 +50,23 @@ Outer:
 			tok = l.newToken(token.ASSIGN, l.ch)
 		}
 	case '+':
-		tok = l.newToken(token.PLUS, l.ch)
+		if l.peekChar() == '=' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.PLUSASSIGN, Literal: literal, Line: l.line}
+		} else {
+			tok = l.newToken(token.PLUS, l.ch)
+		}
 	case '-':
-		tok = l.newToken(token.MINUS, l.ch)
+		if l.peekChar() == '=' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.MINUSASSIGN, Literal: literal, Line: l.line}
+		} else {
+			tok = l.newToken(token.MINUS, l.ch)
+		}
 	case '!':
 		if l.peekChar() == '=' {
 			ch := l.ch
@@ -106,11 +120,23 @@ Outer:
 		if l.peekChar() == '/' {
 			l.skipComment()
 			goto Outer
+		} else if l.peekChar() == '=' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.DIVASSIGN, Literal: literal, Line: l.line}
 		} else {
 			tok = l.newToken(token.SLASH, l.ch)
 		}
 	case '*':
-		tok = l.newToken(token.ASTERISK, l.ch)
+		if l.peekChar() == '=' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.MULTASSIGN, Literal: literal, Line: l.line}
+		} else {
+			tok = l.newToken(token.ASTERISK, l.ch)
+		}
 	case '<':
 		if l.peekChar() == '=' {
 			ch := l.ch

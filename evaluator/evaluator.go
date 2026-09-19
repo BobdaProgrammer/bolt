@@ -70,7 +70,6 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		path, _ := os.Stat(node.Value)
 		modulename := utils.FileName(path.Name())
-		fmt.Println(modulename)
 		file := utils.ReadFile(path.Name())
 		program, module := utils.ProcessModule(file)
 		if program == nil {
@@ -82,7 +81,6 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			err.Message = "IMPORT " + modulename + ".bolt: " + err.Message
 			return err
 		}
-		fmt.Println(res)
 		moduleStruct := &object.StructInstance{}
 		fields := map[string]object.Object{}
 		for export, value := range module.Env.Exports {
@@ -113,11 +111,13 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(right) {
 			return right
 		}
-		return evalInfixExpression(node.Operator, left, right, node.Line())
+		return utils.EvalInfixExpression(node.Operator, left, right, node.Line())
 	case *ast.BlockStatement:
 		return evalBlockStatement(node, env, false)
 	case *ast.IfExpression:
 		return evalIfExpression(node, env)
+	case *ast.Null:
+		return NULL
 	case *ast.ReturnStatement:
 		if len(node.ReturnValues) == 0 {
 			return &object.ReturnValue{Value: nil}
@@ -138,6 +138,53 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			vals.Elements = append(vals.Elements, val)
 		}
 		return &object.ReturnValue{Value: vals}
+	case *ast.AssignExpression:
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		switch left := node.Left.(type) {
+		case *ast.Identifier:
+			if _, ok := env.Get(left.Value); !ok {
+				return newError("Cannot use uninitialised variable in non let statement assignment: %s - line=%d", left.Value, node.Line())
+			}
+			if env.Exporting {
+				env.Exports[left.Value] = val
+			}
+			env.AssignSet(left.Value, val)
+		case *ast.FieldAccess:
+			if env.Exporting {
+				return newError("Cannot use pub on field access assignment. Use pub on the struct instance instead - line=%d", node.Line())
+			}
+			l := Eval(left.Left, env)
+			if isError(l) {
+				return l
+			}
+			ev := evalFieldAccessAssignment(l, left.Right, val, env)
+			if isError(ev) {
+				return ev
+			}
+		case *ast.ArrayLiteral:
+
+			if val.Type() != object.SPREAD_OBJ {
+				return newError("Cannot use multiple value let statement without multiple values. line=%d", node.Line())
+			}
+			spread := val.(*object.Spread)
+			if len(left.Elements) > len(spread.Elements) {
+				return newError("Too many values on left side of let statement for multiple return values. Wanted %d, got %d - line=%d", len(spread.Elements), len(left.Elements))
+			}
+			for i, el := range left.Elements {
+				if ident, ok := el.(*ast.Identifier); ok {
+
+					if _, ok := env.Get(ident.Value); !ok {
+						return newError("Cannot use uninitialised variable in non let statement assignment: %s - line=%d", ident.Value, node.Line())
+					}
+					env.AssignSet(ident.Value, spread.Elements[i])
+				} else {
+					return newError("Cannot use non identifier in multiple value let statement, line=%d", node.Line())
+				}
+			}
+		}
 	case *ast.LetStatement:
 		val := Eval(node.Value, env)
 		if isError(val) {
@@ -263,6 +310,14 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			} else {
 				return newError("Index out of range %d in %s with length %d - line=%d", i.Value, l.Type(), len(l.Elements), node.LineNum)
 			}
+		} else if left.Type() == object.HASH_OBJ {
+			hashable, ok := index.(object.Hashable)
+			if !ok {
+				return newError("Cannot use %s as hash key in index expression - line=%d", index.Inspect(), node.LineNum)
+			}
+			key := hashable.HashKey()
+			hash := left.(*object.Hash)
+			hash.Pairs[key] = object.HashPair{Key: index, Value: value}
 		}
 	case *ast.StructInstantiation:
 		left := Eval(node.Left, env)
@@ -322,7 +377,7 @@ func evalFieldAccessAssignment(left object.Object, right ast.Expression, value o
 				}
 			}
 			if !found {
-				return newError("Cannot instantiate struct from %s since %s is not a type - line=%d", left.Type(), left.Type(), right.Line())
+				return newError("%s is not an available field of %s formed from struct type: %s - line=%d", r.Value, left.Type(), left.StType.Name, right.Line())
 			}
 			left.Fields[r.Value] = value
 			return nil
@@ -436,6 +491,21 @@ func evalForExpression(node *ast.ForExpression, env *object.Environment) object.
 			return r
 		}
 		switch r.(type) {
+		case *object.Integer:
+			int := r.(*object.Integer)
+			if secondVal {
+				return newError("Can only use one variable when looping over integer, got 2 - line=%d", node.Line())
+			}
+			for x := range int.Value {
+				forEnv.Set(rang.Val1.Token.Literal, &object.Integer{Value: int64(x)})
+				conseq := evalBlockStatement(node.Consequence, forEnv, true)
+				if isError(conseq) {
+					return conseq
+				}
+				if isBreak(conseq) {
+					return NULL
+				}
+			}
 		case *object.Array:
 			arr := r.(*object.Array)
 			for x, y := range arr.Elements {
@@ -511,21 +581,35 @@ func evalHashLiteral(node *ast.HashLiteral, env *object.Environment) object.Obje
 }
 
 func evalSliceExpression(left, firstInd, secondInd object.Object, line int) object.Object {
-	if left.Type() != object.ARRAY_OBJ {
-		return newError("Array slicing operator not supported on: %s - line=%d", left.Type(), line)
-	}
-
-	if firstInd.Type() == object.INTEGER_OBJ && secondInd.Type() == object.INTEGER_OBJ {
-		arrObj := left.(*object.Array)
-		firstIndObj := firstInd.(*object.Integer)
-		secondIndObj := secondInd.(*object.Integer)
-		if int(firstIndObj.Value) <= len(arrObj.Elements) && firstIndObj.Value >= 0 && int(secondIndObj.Value) <= len(arrObj.Elements) && secondIndObj.Value >= 0 {
-			return &object.Array{Elements: arrObj.Elements[firstIndObj.Value:secondIndObj.Value]}
+	switch left.Type() {
+	case object.ARRAY_OBJ:
+		if firstInd.Type() == object.INTEGER_OBJ && secondInd.Type() == object.INTEGER_OBJ {
+			arrObj := left.(*object.Array)
+			firstIndObj := firstInd.(*object.Integer)
+			secondIndObj := secondInd.(*object.Integer)
+			if int(firstIndObj.Value) <= len(arrObj.Elements) && firstIndObj.Value >= 0 && int(secondIndObj.Value) <= len(arrObj.Elements) && secondIndObj.Value >= 0 {
+				return &object.Array{Elements: arrObj.Elements[firstIndObj.Value:secondIndObj.Value]}
+			} else {
+				return newError("Attempting to access index outside of array bounds %s[%d:%d] - line=%d", left.Type(), firstIndObj.Value, secondIndObj.Value, line)
+			}
 		} else {
-			return newError("Attempting to access index outside of array bounds %s[%d:%d] - line=%d", left.Type(), firstIndObj.Value, secondIndObj.Value, line)
+			return newError("Values in array slicing expression must be integer %s[%s:%s] - line=%d", left.Type(), firstInd.Type(), secondInd.Type(), line)
 		}
-	} else {
-		return newError("Values in array slicing expression must be integer %s[%s:%s] - line=%d", left.Type(), firstInd.Type(), secondInd.Type(), line)
+	case object.STRING_OBJ:
+		if firstInd.Type() == object.INTEGER_OBJ && secondInd.Type() == object.INTEGER_OBJ {
+			strObj := left.(*object.String)
+			firstIndObj := firstInd.(*object.Integer)
+			secondIndObj := secondInd.(*object.Integer)
+			if int(firstIndObj.Value) <= len(strObj.Value) && firstIndObj.Value >= 0 && int(secondIndObj.Value) <= len(strObj.Value) && secondIndObj.Value >= 0 {
+				return &object.String{Value: strObj.Value[firstIndObj.Value:secondIndObj.Value]}
+			} else {
+				return newError("Attempting to access index outside of string bounds %s[%d:%d] - line=%d", left.Type(), firstIndObj.Value, secondIndObj.Value, line)
+			}
+		} else {
+			return newError("Values in array slicing expression must be integer %s[%s:%s] - line=%d", left.Type(), firstInd.Type(), secondInd.Type(), line)
+		}
+	default:
+		return newError("Array slicing operator not supported on: %s - line=%d", left.Type(), line)
 	}
 }
 
@@ -551,6 +635,13 @@ func evalIndexExpression(left, index object.Object, line int) object.Object {
 		return evalArrayIndexExpression(left, index)
 	case left.Type() == object.HASH_OBJ:
 		return evalHashIndexExpression(left, index, line)
+	case left.Type() == object.STRING_OBJ:
+		str := left.(*object.String)
+		idx := index.(*object.Integer).Value
+		if idx < 0 || (int(idx) > len(str.Value)-1) {
+			return NULL
+		}
+		return &object.String{Value: string(str.Value[idx])}
 	default:
 		return newError("Index operator not supported: %s - line=%d", left.Type(), line)
 	}
@@ -627,6 +718,7 @@ func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object
 	}
 
 	if builtin, ok := builtins[node.Value]; ok {
+		SetBuiltinLineNum(node.Line())
 		return builtin
 	}
 
@@ -674,164 +766,6 @@ func isTruthy(obj object.Object) bool {
 		return false
 	default:
 		return true
-	}
-}
-
-func evalInfixExpression(operator string, left, right object.Object, line int) object.Object {
-	if left == nil || right == nil {
-		if left == nil {
-			return newError("Unknown left side of infix expression: nil - line=%d", line)
-		}
-		if right == nil {
-			return newError("Unknown right side of infix expression: nil - line=%d", line)
-		}
-	}
-
-	if operator == "&&" || operator == "||" {
-		return evalBooleanOperatorInfixExpression(operator, left, right, line)
-	}
-
-	switch {
-	case left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ:
-		return evalIntegerInfixExpression(operator, left, right, line)
-	case isNumber(left.Type()) && isNumber(right.Type()):
-		l, r := convertInfixNumsToFloat(left, right)
-		return evalFloatInfixExpression(operator, l, r, line)
-	case left.Type() == object.BOOLEAN_OBJ && right.Type() == object.BOOLEAN_OBJ:
-		return evalBooleanInfixExpression(operator, left, right, line)
-	case left.Type() == object.STRING_OBJ && right.Type() == object.STRING_OBJ:
-		return evalStringInfixExpression(operator, left, right, line)
-	case (left.Type() == object.STRING_OBJ && right.Type() == object.INTEGER_OBJ) || (left.Type() == object.INTEGER_OBJ && right.Type() == object.STRING_OBJ):
-		return evalStringAndIntegerInfixExpression(operator, left, right, line)
-	case left.Type() != right.Type():
-		return newError("Type mismatch on infix expression: %s %s %s - line=%d", left.Type(), operator, right.Type(), line)
-	default:
-		return newError("Unknown operator '%s' in: %s %s %s - line=%d", operator, left.Type(), operator, right.Type(), line)
-	}
-}
-
-func convertInfixNumsToFloat(left, right object.Object) (object.Object, object.Object) {
-	l, r := left, right
-	if left.Type() == object.INTEGER_OBJ {
-		leftVal := l.(*object.Integer)
-		l = &object.Float{Value: float64(leftVal.Value)}
-	}
-	if right.Type() == object.INTEGER_OBJ {
-		rightVal := r.(*object.Integer)
-		r = &object.Float{Value: float64(rightVal.Value)}
-	}
-	return l, r
-}
-
-func isNumber(t object.ObjectType) bool {
-	if t == object.INTEGER_OBJ || t == object.FLOAT_OBJ {
-		return true
-	}
-	return false
-}
-
-func evalStringAndIntegerInfixExpression(operator string, left, right object.Object, line int) object.Object {
-	if operator == "*" {
-		if left.Type() == object.STRING_OBJ {
-			leftVal := left.(*object.String).Value
-			rightVal := right.(*object.Integer).Value
-			return &object.String{Value: strings.Repeat(leftVal, int(rightVal))}
-		} else {
-			leftVal := left.(*object.Integer).Value
-			rightVal := right.(*object.String).Value
-			return &object.String{Value: strings.Repeat(rightVal, int(leftVal))}
-		}
-	} else {
-		return newError("Unknown operator '%s' in: %s %s %s - line=%d", operator, left.Type(), operator, right.Type(), line)
-	}
-}
-
-func evalStringInfixExpression(operator string, left, right object.Object, line int) object.Object {
-	if operator != "+" {
-		return newError("Unknown operator '%s' in: %s %s %s - line=%d", operator, left.Type(), operator, right.Type(), line)
-	}
-
-	leftVal := left.(*object.String).Value
-	rightVal := right.(*object.String).Value
-
-	return &object.String{Value: leftVal + rightVal}
-}
-
-func evalBooleanOperatorInfixExpression(operator string, left, right object.Object, line int) object.Object {
-	switch operator {
-	case "&&":
-		return nativeBoolToBooleanObject(isTruthy(left) && isTruthy(right))
-	case "||":
-		return nativeBoolToBooleanObject(isTruthy(left) || isTruthy(right))
-	default:
-		return newError("Unknown operator '%s' in: %s %s %s - line=%d", operator, left.Type(), operator, right.Type(), line)
-	}
-}
-func evalBooleanInfixExpression(operator string, left, right object.Object, line int) object.Object {
-	switch operator {
-	case "==":
-		return nativeBoolToBooleanObject(left == right)
-	case "!=":
-		return nativeBoolToBooleanObject(left != right)
-	default:
-		return newError("Unknown operator '%s' in: %s %s %s - line=%d", operator, left.Type(), operator, right.Type(), line)
-	}
-}
-
-func evalFloatInfixExpression(operator string, left, right object.Object, line int) object.Object {
-	leftVal := left.(*object.Float).Value
-	rightVal := right.(*object.Float).Value
-	switch operator {
-	case "+":
-		return &object.Float{Value: leftVal + rightVal}
-	case "-":
-		return &object.Float{Value: leftVal - rightVal}
-	case "*":
-		return &object.Float{Value: leftVal * rightVal}
-	case "/":
-		return &object.Float{Value: leftVal / rightVal}
-	case "<":
-		return nativeBoolToBooleanObject(leftVal < rightVal)
-	case ">":
-		return nativeBoolToBooleanObject(leftVal > rightVal)
-	case "<=":
-		return nativeBoolToBooleanObject(leftVal <= rightVal)
-	case ">=":
-		return nativeBoolToBooleanObject(leftVal >= rightVal)
-	case "==":
-		return nativeBoolToBooleanObject(leftVal == rightVal)
-	case "!=":
-		return nativeBoolToBooleanObject(leftVal != rightVal)
-	default:
-		return newError("unknown operator '%s' in infix expression: %s %s %s - line=%d", operator, left.Type(), operator, right.Type(), line)
-	}
-}
-func evalIntegerInfixExpression(operator string, left, right object.Object, line int) object.Object {
-	leftVal := left.(*object.Integer).Value
-	rightVal := right.(*object.Integer).Value
-	switch operator {
-	case "+":
-		return &object.Integer{Value: leftVal + rightVal}
-	case "-":
-		return &object.Integer{Value: leftVal - rightVal}
-	case "*":
-		return &object.Integer{Value: leftVal * rightVal}
-	case "/":
-		return &object.Integer{Value: leftVal / rightVal}
-	case "<":
-		return nativeBoolToBooleanObject(leftVal < rightVal)
-	case ">":
-		return nativeBoolToBooleanObject(leftVal > rightVal)
-	case "<=":
-		return nativeBoolToBooleanObject(leftVal <= rightVal)
-	case ">=":
-		return nativeBoolToBooleanObject(leftVal >= rightVal)
-	case "==":
-		return nativeBoolToBooleanObject(leftVal == rightVal)
-	case "!=":
-		return nativeBoolToBooleanObject(leftVal != rightVal)
-	default:
-		return newError("unknown operator '%s' in infix expression: %s %s %s - line=%d", operator, left.Type(), operator, right.Type(), line)
 	}
 }
 

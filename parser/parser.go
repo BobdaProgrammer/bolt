@@ -40,6 +40,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.ELLIPSIS, p.parsePrefixExpression)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
 	p.registerPrefix(token.IF, p.parseIfExpression)
+	p.registerPrefix(token.NULL, p.parseNull)
 	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
 	p.registerPrefix(token.STRING, p.parseStringLiteral)
 	p.registerPrefix(token.LBRACKET, p.parseArrayLiteral)
@@ -64,7 +65,71 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.LBRACKET, p.parseArrayCallExpression)
 	p.registerInfix(token.DOT, p.parseFieldAccess)
 	p.registerInfix(token.AS, p.parseStructTypeConversion)
+	p.registerInfix(token.ASSIGN, p.parseAssignment)
+	p.registerInfix(token.PLUSASSIGN, p.parseAssignmentInfix)
+	p.registerInfix(token.MINUSASSIGN, p.parseAssignmentInfix)
+	p.registerInfix(token.MULTASSIGN, p.parseAssignmentInfix)
+	p.registerInfix(token.DIVASSIGN, p.parseAssignmentInfix)
 	return p
+}
+
+func (p *Parser) parseNull() ast.Expression {
+	return &ast.Null{Token: p.curToken, LineNum: p.curToken.Line}
+}
+
+func (p *Parser) parseAssignmentInfix(left ast.Expression) ast.Expression {
+	op := p.curToken.Literal
+	p.nextToken()
+	expr := p.parseExpression(LOWEST)
+	infix := &ast.InfixExpression{Token: p.curToken, LineNum: p.curToken.Line, Left: left, Right: expr, Operator: string(op[0])}
+	stmt := &ast.AssignExpression{Token: p.curToken, LineNum: p.curToken.Line}
+
+	if ident, ok := left.(*ast.Identifier); ok {
+		stmt.Left = ident
+	} else if fa, ok := left.(*ast.FieldAccess); ok {
+		stmt.Left = fa
+	} else if arr, ok := left.(*ast.ArrayLiteral); ok {
+		stmt.Left = arr
+	} else if left != nil {
+		p.errors = append(p.errors, fmt.Sprintf("Cannot use type %s on left side of assign expression - line=%d", left.String(), left.Line()))
+		return nil
+	} else {
+		p.errors = append(p.errors, fmt.Sprintf("Cannot use that type on left side of assign expression - line=%d", p.curToken.Line))
+	}
+
+	stmt.Value = infix
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseAssignment(left ast.Expression) ast.Expression {
+
+	stmt := &ast.AssignExpression{Token: p.curToken, LineNum: p.curToken.Line}
+
+	if ident, ok := left.(*ast.Identifier); ok {
+		stmt.Left = ident
+	} else if fa, ok := left.(*ast.FieldAccess); ok {
+		stmt.Left = fa
+	} else if arr, ok := left.(*ast.ArrayLiteral); ok {
+		stmt.Left = arr
+	} else if left != nil {
+		p.errors = append(p.errors, fmt.Sprintf("Cannot use type %s on left side of assign expression - line=%d", left.String(), left.Line()))
+		return nil
+	} else {
+		p.errors = append(p.errors, fmt.Sprintf("Cannot use that type on left side of assign expression - line=%d", p.curToken.Line))
+	}
+
+	p.nextToken()
+
+	stmt.Value = p.parseExpression(LOWEST)
+
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+
+	return stmt
 }
 
 func (p *Parser) parseStructTypeConversion(left ast.Expression) ast.Expression {
@@ -620,6 +685,8 @@ func (p *Parser) parseStatement() ast.Statement {
 
 const (
 	_ int = iota
+	PROGRAMLOWEST
+	ASSIGN // =
 	LOWEST
 	AND         // &&
 	OR          // ||
@@ -635,6 +702,7 @@ const (
 )
 
 var precedences = map[token.TokenType]int{
+	token.ASSIGN:   ASSIGN,
 	token.EQ:       EQUALS,
 	token.NOT_EQ:   EQUALS,
 	token.LT:       LESSGREATER,
@@ -671,7 +739,7 @@ func (p *Parser) peekPrecedence() int {
 func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 	// defer untrace(trace("parseExpressionStatement"))
 	stmt := &ast.ExpressionStatement{Token: p.curToken, LineNum: p.curToken.Line}
-	stmt.Expression = p.parseExpression(LOWEST)
+	stmt.Expression = p.parseExpression(PROGRAMLOWEST)
 
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()

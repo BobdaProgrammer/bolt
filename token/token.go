@@ -24,6 +24,7 @@ var keywords = map[string]TokenType{
 	"import": IMPORT,
 	"pub":    PUB,
 	"as":     AS,
+	"null":   NULL,
 }
 
 func LookupIdent(ident string) TokenType {
@@ -44,15 +45,19 @@ const (
 	INT   = "INT"   // 1343456
 	FLOAT = "FLOAT"
 	// Operators
-	ASSIGN   = "="
-	PLUS     = "+"
-	MINUS    = "-"
-	BANG     = "!"
-	ELLIPSIS = "..."
-	ASTERISK = "*"
-	SLASH    = "/"
-	AND      = "&&"
-	OR       = "||"
+	ASSIGN      = "="
+	PLUS        = "+"
+	PLUSASSIGN  = "+="
+	MINUSASSIGN = "-="
+	MULTASSIGN  = "*="
+	DIVASSIGN   = "/="
+	MINUS       = "-"
+	BANG        = "!"
+	ELLIPSIS    = "..."
+	ASTERISK    = "*"
+	SLASH       = "/"
+	AND         = "&&"
+	OR          = "||"
 
 	NEWLINE = "\n"
 
@@ -80,6 +85,7 @@ const (
 	RBRACKET = "]"
 
 	// Keywords
+	NULL     = "NULL"
 	FUNCTION = "FUNCTION"
 	LET      = "LET"
 	TRUE     = "TRUE"

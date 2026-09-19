@@ -21,7 +21,6 @@ pub let mathlib = new maths{
     sum: math.sum
 }
 
-
 //let map = fn(arr, f){ // Map function
 //    let iter = fn(arr, accumulated) {
 //        if len(arr) == 0{

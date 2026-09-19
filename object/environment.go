@@ -27,6 +27,18 @@ func (e *Environment) Get(name string) (Object, bool) {
 	return obj, ok
 }
 
+func (e *Environment) AssignSet(name string, val Object) Object {
+	if name == "_" {
+		return val
+	}
+	if _, ok := e.store[name]; !ok {
+		return e.outer.AssignSet(name, val)
+	} else {
+		e.store[name] = val
+	}
+	return val
+}
+
 func (e *Environment) Set(name string, val Object) Object {
 	if name == "_" {
 		return val
