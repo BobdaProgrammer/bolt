@@ -550,7 +550,7 @@ func (st *StructTypeConversion) String() string {
 }
 
 type Null struct {
-	token.Token
+	Token   token.Token
 	LineNum int
 }
 
@@ -558,3 +558,17 @@ func (n *Null) expressionNode()      {}
 func (n *Null) Line() int            { return n.LineNum }
 func (n *Null) TokenLiteral() string { return n.Token.Literal }
 func (n *Null) String() string       { return "null" }
+
+type SwitchExpression struct {
+	Token      token.Token
+	LineNum    int
+	SwitchItem Expression
+	Cases      []SwitchCase
+}
+
+type SwitchCase struct {
+	Token       token.Token
+	LineNum     int
+	Condition   Expression
+	Consequence *BlockStatement
+}

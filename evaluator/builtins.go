@@ -94,7 +94,7 @@ var builtins = map[string]*object.Builtin{
 			case *object.Array:
 				newArr := val.Elements
 				for i, el := range val.Elements {
-					if bool, ok := utils.EvalInfixExpression("==", el, args[1], lineNum).(*object.Boolean); ok {
+					if bool, ok := utils.EvalInfixExpression("==", el, args[1], lineNum, TRUE, FALSE, NULL).(*object.Boolean); ok {
 						if bool.Value {
 							newArr = append(val.Elements[0:i], val.Elements[i+1:len(val.Elements)]...)
 							break

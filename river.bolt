@@ -1,0 +1,50 @@
+let farmer = 1
+let chicken = 1
+let grain = 1
+let fox = 1
+
+let runChecks = fn(){
+    if chicken == grain && farmer != chicken{
+        return "chicken ate the grain"
+    }else if chicken == fox && farmer != chicken{
+        return "fox ate the chicken"
+    }else if chicken == -1 && chicken == grain && chicken == fox{
+        return "you won!"
+    }
+    return null
+}
+
+for true{
+    log("farmer - ", if farmer == 1 {"left"}else{"right"})
+    log("fox - ", if fox == 1 {"left"}else{"right"})
+    log("chicken - ", if chicken == 1 {"left"}else{"right"})
+    log("grain - ", if grain == 1 {"left"}else{"right"})
+
+    let question = "You are on the left side of the river. Move the chicken, grain or fox?"
+    if farmer == -1{
+        question = "You are on the right side of the river. Move the chicken, grain or fox?"
+    }
+    let choice = input(question)
+    if choice != "chicken" && choice != "grain" && choice != "fox" && choice != "farmer"{
+        log("invalid")
+    }else{
+        if choice == "chicken"{
+            farmer = -farmer
+            chicken = -chicken
+        } else if choice == "fox"{
+            farmer = -farmer
+            fox = -fox
+        } else if choice == "grain"{
+            farmer = -farmer
+            grain = -grain
+        } else if choice == "farmer"{
+            farmer = -farmer
+        }
+    }
+
+    let checks = runChecks()
+    if checks != null{
+        log(checks)
+        break
+    }
+}

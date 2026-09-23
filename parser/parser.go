@@ -47,6 +47,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.LBRACE, p.parseHashLiteral)
 	p.registerPrefix(token.FOR, p.parseForExpression)
 	p.registerPrefix(token.NEW, p.parseStructInstantiation)
+	p.registerPrefix(token.SWITCH, p.parseSwitchExpression)
 
 	p.infixParseFns = make(map[token.TokenType]infixParseFn)
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -71,6 +72,10 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.MULTASSIGN, p.parseAssignmentInfix)
 	p.registerInfix(token.DIVASSIGN, p.parseAssignmentInfix)
 	return p
+}
+
+func (p *Parser) parseSwitchExpression() ast.Expression {
+	return nil
 }
 
 func (p *Parser) parseNull() ast.Expression {

@@ -34,7 +34,8 @@ func nativeBoolToBooleanObject(input bool) *object.Boolean {
 func newError(format string, a ...interface{}) *object.Error {
 	return &object.Error{Message: fmt.Sprintf(format, a...)}
 }
-func EvalInfixExpression(operator string, left, right object.Object, line int) object.Object {
+func EvalInfixExpression(operator string, left, right object.Object, line int, tr, fa *object.Boolean, nu *object.Null) object.Object {
+	TRUE, FALSE, NULL = tr, fa, nu
 	if left == nil || right == nil {
 		if left == nil {
 			return newError("Unknown left side of infix expression: nil - line=%d", line)

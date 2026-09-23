@@ -111,7 +111,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(right) {
 			return right
 		}
-		return utils.EvalInfixExpression(node.Operator, left, right, node.Line())
+		return utils.EvalInfixExpression(node.Operator, left, right, node.Line(), TRUE, FALSE, NULL)
 	case *ast.BlockStatement:
 		return evalBlockStatement(node, env, false)
 	case *ast.IfExpression:
@@ -369,7 +369,6 @@ func evalFieldAccessAssignment(left object.Object, right ast.Expression, value o
 	case *object.StructInstance:
 		if r, ok := right.(*ast.Identifier); ok {
 			availableFieldsArr := left.StType.Fields
-			fmt.Println(availableFieldsArr, r.Value)
 			found := false
 			for _, field := range availableFieldsArr {
 				if field.Value == r.Value {
