@@ -1,3 +1,7 @@
+# Bolt
+A simple but yet powerful language you'll fall in love with
+[![wakatime](https://wakatime.com/badge/user/a7ac31a2-8b07-465a-b0d0-83e0404fe768/project/dcd6d33f-2922-4060-922b-81313a41e9f0.svg)](https://wakatime.com/badge/user/a7ac31a2-8b07-465a-b0d0-83e0404fe768/project/dcd6d33f-2922-4060-922b-81313a41e9f0)
+
 # The Syntax
 
 ### Operators
