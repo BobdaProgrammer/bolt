@@ -39,6 +39,27 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return evalProgram(node.Statements, env)
 	case *ast.ExpressionStatement:
 		return Eval(node.Expression, env)
+	case *ast.SwitchExpression:
+		value := Eval(node.SwitchItem, env)
+		if isError(value) {
+			return value
+		}
+		for _, cas := range node.Cases {
+			cond := Eval(cas.Condition, env)
+			if isError(cond) {
+				return cond
+			}
+
+			val := utils.EvalInfixExpression("==", value, cond, cas.LineNum, TRUE, FALSE, NULL)
+			if isError(val) {
+				return newError("Cannot use %s as a case in switch that is comparing %s - line=%d", cond.Type(), value.Type(), cas.LineNum)
+			} else if b, ok := val.(*object.Boolean); ok {
+				if b.Value {
+					return evalBlockStatement(cas.Consequence, env, false)
+				}
+			}
+
+		}
 	case *ast.IntegerLiteral:
 		return &object.Integer{Value: node.Value}
 	case *ast.FloatLiteral:

@@ -75,7 +75,34 @@ func New(l *lexer.Lexer) *Parser {
 }
 
 func (p *Parser) parseSwitchExpression() ast.Expression {
-	return nil
+	sw := &ast.SwitchExpression{Token: p.curToken, LineNum: p.curToken.Line}
+	p.nextToken()
+	if p.curTokenIs(token.LBRACE) {
+		sw.SwitchItem = &ast.Boolean{Token: p.curToken, LineNum: p.curToken.Line, Value: true}
+	} else {
+		sw.SwitchItem = p.parseExpression(LOWEST)
+		if !p.expectPeek(token.LBRACE) {
+			return nil
+		}
+	}
+	cases := []ast.SwitchCase{}
+	p.nextToken()
+	for p.curTokenIs(token.CASE) {
+		cas := ast.SwitchCase{Token: p.curToken, LineNum: p.curToken.Line}
+		if p.peekTokenIs(token.COLON) {
+			p.errors = append(p.errors, fmt.Sprintf("Case in switch statement must have a value to check. cannot use: `case:` - line=%d", p.curToken.Line))
+			return nil
+		}
+		p.nextToken()
+		cas.Condition = p.parseExpression(LOWEST)
+		if !p.expectPeek(token.COLON) {
+			return nil
+		}
+		cas.Consequence = p.parseBlockStatement()
+		cases = append(cases, cas)
+	}
+	sw.Cases = cases
+	return sw
 }
 
 func (p *Parser) parseNull() ast.Expression {
@@ -547,7 +574,7 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 
 	p.nextToken()
 
-	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) && !p.curTokenIs(token.CASE) {
 		stmt := p.parseStatement()
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)

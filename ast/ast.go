@@ -566,9 +566,27 @@ type SwitchExpression struct {
 	Cases      []SwitchCase
 }
 
+func (se *SwitchExpression) expressionNode()      {}
+func (se *SwitchExpression) Line() int            { return se.LineNum }
+func (se *SwitchExpression) TokenLiteral() string { return se.Token.Literal }
+func (se *SwitchExpression) String() string {
+	cases := []string{}
+	for _, cas := range se.Cases {
+		cases = append(cases, cas.String())
+	}
+	return "switch " + se.SwitchItem.String() + "{\n" + strings.Join(cases, "\n") + "\n}"
+}
+
 type SwitchCase struct {
 	Token       token.Token
 	LineNum     int
 	Condition   Expression
 	Consequence *BlockStatement
+}
+
+func (sc *SwitchCase) expressionNode()      {}
+func (sc *SwitchCase) Line() int            { return sc.LineNum }
+func (sc *SwitchCase) TokenLiteral() string { return sc.Token.Literal }
+func (sc *SwitchCase) String() string {
+	return "case " + sc.Condition.String() + ":" + sc.Consequence.String()
 }

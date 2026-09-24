@@ -25,6 +25,7 @@ var keywords = map[string]TokenType{
 	"pub":    PUB,
 	"as":     AS,
 	"switch": SWITCH,
+	"case":   CASE,
 	"null":   NULL,
 }
 
@@ -89,6 +90,7 @@ const (
 	NULL     = "NULL"
 	FUNCTION = "FUNCTION"
 	SWITCH   = "SWITCH"
+	CASE     = "case"
 	LET      = "LET"
 	TRUE     = "TRUE"
 	FALSE    = "FALSE"
