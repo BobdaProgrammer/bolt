@@ -171,7 +171,7 @@ What has happened is instead of adding the values of small array to large array,
 Here is how to fix this
 ```go
 let smallArray = [9,10,11]
-let largeArray [1,2,3,4,5,6,7,8, ...smallArray] // this creates a spread of small array
+let largeArray = [1,2,3,4,5,6,7,8, ...smallArray] // this creates a spread of small array
 
 log(largeArray) // [1,2,3,4,5,6,7,8,9,10,11]
 ```
