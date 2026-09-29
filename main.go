@@ -35,10 +35,10 @@ func main() {
 		}
 
 		env := object.NewEnvironment(false)
-		evaluator.Eval(program, env)
-		// if evaluated != nil {
-		// 	fmt.Println(fmt.Sprint(evaluated.Inspect(), "\n"))
-		// }
+		evaluated := evaluator.Eval(program, env)
+		if evaluated != nil && evaluated.Type() == object.ERROR_OBJ {
+			fmt.Println(fmt.Sprint(evaluated.Inspect(), "\n"))
+		}
 	}
 }
 

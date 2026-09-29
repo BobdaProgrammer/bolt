@@ -50,7 +50,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 				return cond
 			}
 
-			val := utils.EvalInfixExpression("==", value, cond, cas.LineNum, TRUE, FALSE, NULL)
+			val := utils.EvalInfixExpression("==", value, cond, cas.Line(), TRUE, FALSE, NULL)
 			if isError(val) {
 				return newError("Cannot use %s as a case in switch that is comparing %s - line=%d", cond.Type(), value.Type(), cas.LineNum)
 			} else if b, ok := val.(*object.Boolean); ok {
@@ -91,7 +91,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		path, _ := os.Stat(node.Value)
 		modulename := utils.FileName(path.Name())
-		file := utils.ReadFile(path.Name())
+		file := utils.ReadFile(node.Value)
 		program, module := utils.ProcessModule(file)
 		if program == nil {
 			return newError("Import file had errors - line=%d", node.Line())
@@ -115,6 +115,12 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		} else {
 			return newError("Cannot use break statement when not in for loop - line=%d", node.Line())
 		}
+	case *ast.ContinueStatement:
+		if env.InFor {
+			return &object.Continue{}
+		} else {
+			return newError("Cannot use continue statement when not in for loop - line=%d", node.Line())
+		}
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(node.Value)
 	case *ast.PrefixExpression:
@@ -134,7 +140,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return utils.EvalInfixExpression(node.Operator, left, right, node.Line(), TRUE, FALSE, NULL)
 	case *ast.BlockStatement:
-		return evalBlockStatement(node, env, false)
+		return evalBlockStatement(node, env, env.InFor)
 	case *ast.IfExpression:
 		return evalIfExpression(node, env)
 	case *ast.Null:
@@ -181,7 +187,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			if isError(l) {
 				return l
 			}
-			ev := evalFieldAccessAssignment(l, left.Right, val, env)
+			ev := evalFieldAccessAssignment(l, left.Right, val, env, left)
 			if isError(ev) {
 				return ev
 			}
@@ -225,7 +231,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			if isError(left) {
 				return left
 			}
-			ev := evalFieldAccessAssignment(left, fa.Right, val, env)
+			ev := evalFieldAccessAssignment(left, fa.Right, val, env, fa)
 			if isError(ev) {
 				return ev
 			}
@@ -318,27 +324,8 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(value) {
 			return value
 		}
-		if left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ {
-			l := left.(*object.Array)
-			i := index.(*object.Integer)
-			if i.Value >= 0 && i.Value < int64(len(l.Elements)) {
-				if value.Type() == object.SPREAD_OBJ {
-					spread := value.(*object.Spread)
-					l.Elements = append(l.Elements[:i.Value], append(spread.Elements, l.Elements[i.Value+1:]...)...)
-				} else {
-					l.Elements[i.Value] = value
-				}
-			} else {
-				return newError("Index out of range %d in %s with length %d - line=%d", i.Value, l.Type(), len(l.Elements), node.LineNum)
-			}
-		} else if left.Type() == object.HASH_OBJ {
-			hashable, ok := index.(object.Hashable)
-			if !ok {
-				return newError("Cannot use %s as hash key in index expression - line=%d", index.Inspect(), node.LineNum)
-			}
-			key := hashable.HashKey()
-			hash := left.(*object.Hash)
-			hash.Pairs[key] = object.HashPair{Key: index, Value: value}
+		if val := evalIndexAssignExpression(left, index, value, node.Line()); isError(val) {
+			return val
 		}
 	case *ast.StructInstantiation:
 		left := Eval(node.Left, env)
@@ -364,6 +351,32 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	return nil
 }
 
+func evalIndexAssignExpression(left, index, value object.Object, line int) object.Object {
+	if left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ {
+		l := left.(*object.Array)
+		i := index.(*object.Integer)
+		if i.Value >= 0 && i.Value < int64(len(l.Elements)) {
+			if value.Type() == object.SPREAD_OBJ {
+				spread := value.(*object.Spread)
+				l.Elements = append(l.Elements[:i.Value], append(spread.Elements, l.Elements[i.Value+1:]...)...)
+			} else {
+				l.Elements[i.Value] = value
+			}
+		} else {
+			return newError("Index out of range %d in %s with length %d - line=%d", i.Value, l.Type(), len(l.Elements), line)
+		}
+	} else if left.Type() == object.HASH_OBJ {
+		hashable, ok := index.(object.Hashable)
+		if !ok {
+			return newError("Cannot use %s as hash key in index expression - line=%d", index.Inspect(), line)
+		}
+		key := hashable.HashKey()
+		hash := left.(*object.Hash)
+		hash.Pairs[key] = object.HashPair{Key: index, Value: value}
+	}
+	return nil
+}
+
 func evalStructTypeConversion(left *object.StructInstance, right *object.StructType) object.Object {
 	if len(left.Fields) > len(right.Fields) {
 		return NULL
@@ -385,10 +398,13 @@ func evalStructTypeConversion(left *object.StructInstance, right *object.StructT
 	return newStruct
 }
 
-func evalFieldAccessAssignment(left object.Object, right ast.Expression, value object.Object, env *object.Environment) object.Object {
+func evalFieldAccessAssignment(left object.Object, right ast.Expression, value object.Object, env *object.Environment, node *ast.FieldAccess) object.Object {
 	switch left := left.(type) {
 	case *object.StructInstance:
 		if r, ok := right.(*ast.Identifier); ok {
+			if left.StType == nil {
+				return newError("Cannot use field access on %s - line=%d", node.Left.String(), right.Line())
+			}
 			availableFieldsArr := left.StType.Fields
 			found := false
 			for _, field := range availableFieldsArr {
@@ -402,7 +418,7 @@ func evalFieldAccessAssignment(left object.Object, right ast.Expression, value o
 			left.Fields[r.Value] = value
 			return nil
 		} else if r, ok := right.(*ast.FieldAccess); ok {
-			return evalFieldAccessAssignment(left.Fields[r.Left.String()], r.Right, value, env)
+			return evalFieldAccessAssignment(left.Fields[r.Left.String()], r.Right, value, env, node)
 		} else {
 			return newError("Cannot use non identifier in field access on %s - line=%d", left.Type(), right.Line())
 		}
@@ -430,6 +446,30 @@ func evalFieldAccess(left object.Object, right ast.Expression, env *object.Envir
 				return args[0]
 			}
 			return applyFunction(value, args, right.Line())
+		} else if r, ok := right.(*ast.IndexExpression); ok {
+			value, ok := left.Fields[r.Left.String()]
+			if !ok {
+				return newError("Struct %s Has no array or map field %s - line=%d", left.Type(), right.String(), right.Line())
+			}
+			ind := Eval(r.Index, env)
+			if isError(ind) {
+				return ind
+			}
+			return evalArrayIndexExpression(value, ind)
+		} else if r, ok := right.(*ast.IndexAssignExpression); ok {
+			left, ok := left.Fields[r.Left.String()]
+			if !ok {
+				return newError("Struct %s Has no array or map field %s - line=%d", left.Type(), right.String(), right.Line())
+			}
+			index := Eval(r.Index, env)
+			if isError(index) {
+				return index
+			}
+			val := Eval(r.Value, env)
+			if isError(val) {
+				return val
+			}
+			return evalIndexAssignExpression(left, index, val, right.Line())
 		} else if r, ok := right.(*ast.FieldAccess); ok {
 			return evalFieldAccess(left.Fields[r.Left.String()], r.Right, env)
 		} else {
@@ -495,12 +535,10 @@ func evalForExpression(node *ast.ForExpression, env *object.Environment) object.
 			}
 			if isTruthy(cond) {
 				conseq := evalBlockStatement(node.Consequence, forEnv, true)
-				if isError(conseq) {
-					return conseq
+				if ok, re := forConseqChecks(conseq); ok {
+					return re
 				}
-				if isBreak(conseq) {
-					return NULL
-				}
+
 			} else {
 				break
 			}
@@ -519,12 +557,11 @@ func evalForExpression(node *ast.ForExpression, env *object.Environment) object.
 			for x := range int.Value {
 				forEnv.Set(rang.Val1.Token.Literal, &object.Integer{Value: int64(x)})
 				conseq := evalBlockStatement(node.Consequence, forEnv, true)
-				if isError(conseq) {
-					return conseq
+
+				if ok, re := forConseqChecks(conseq); ok {
+					return re
 				}
-				if isBreak(conseq) {
-					return NULL
-				}
+
 			}
 		case *object.Array:
 			arr := r.(*object.Array)
@@ -534,12 +571,11 @@ func evalForExpression(node *ast.ForExpression, env *object.Environment) object.
 					forEnv.Set(rang.Val2.Token.Literal, y)
 				}
 				conseq := evalBlockStatement(node.Consequence, forEnv, true)
-				if isError(conseq) {
-					return conseq
+
+				if ok, re := forConseqChecks(conseq); ok {
+					return re
 				}
-				if isBreak(conseq) {
-					return NULL
-				}
+
 			}
 		case *object.Hash:
 			dict := r.(*object.Hash)
@@ -549,11 +585,8 @@ func evalForExpression(node *ast.ForExpression, env *object.Environment) object.
 					forEnv.Set(rang.Val2.Token.Literal, pair.Value)
 				}
 				conseq := evalBlockStatement(node.Consequence, forEnv, true)
-				if isError(conseq) {
-					return conseq
-				}
-				if isBreak(conseq) {
-					return NULL
+				if ok, re := forConseqChecks(conseq); ok {
+					return re
 				}
 			}
 		case *object.String:
@@ -564,16 +597,28 @@ func evalForExpression(node *ast.ForExpression, env *object.Environment) object.
 					forEnv.Set(rang.Val2.Token.Literal, &object.String{Value: string(y)})
 				}
 				conseq := evalBlockStatement(node.Consequence, forEnv, true)
-				if isError(conseq) {
-					return conseq
-				}
-				if isBreak(conseq) {
-					return NULL
+				if ok, re := forConseqChecks(conseq); ok {
+					return re
 				}
 			}
 		}
 	}
 	return NULL
+}
+
+func forConseqChecks(conseq object.Object) (bool, object.Object) {
+	if conseq != nil {
+		if isError(conseq) {
+			return true, conseq
+		}
+		if isBreak(conseq) {
+			return true, NULL
+		}
+		if conseq.Type() == object.RETURN_VALUE_OBJ {
+			return true, conseq
+		}
+	}
+	return false, nil
 }
 
 func evalHashLiteral(node *ast.HashLiteral, env *object.Environment) object.Object {
@@ -703,10 +748,13 @@ func extendFunctionEnv(fn *object.Function, args []object.Object) *object.Enviro
 	return env
 }
 func unwrapReturnValue(obj object.Object) object.Object {
+	if isError(obj) {
+		return obj
+	}
 	if returnValue, ok := obj.(*object.ReturnValue); ok {
 		return returnValue.Value
 	}
-	return obj
+	return NULL
 }
 
 func evalExpressions(exps []ast.Expression, env *object.Environment) []object.Object {
@@ -749,12 +797,17 @@ func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object
 func evalBlockStatement(block *ast.BlockStatement, env *object.Environment, inFor bool) object.Object {
 	var result object.Object
 
+	localEnv := env
+	if inFor {
+		localEnv.InFor = true
+	}
+
 	for _, statement := range block.Statements {
-		result = Eval(statement, env)
+		result = Eval(statement, localEnv)
 
 		if result != nil {
 			rt := result.Type()
-			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ || (inFor && rt == object.BREAK_OBJ) {
+			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ || (inFor && rt == object.BREAK_OBJ) || (inFor && rt == object.CONTINUE_OBJ) {
 				return result
 			}
 		}
@@ -768,9 +821,9 @@ func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Obje
 		return condition
 	}
 	if isTruthy(condition) {
-		return Eval(ie.Consequence, object.NewEnclosedEnvironment(env, false))
+		return Eval(ie.Consequence, object.NewEnclosedEnvironment(env, env.InFor))
 	} else if ie.Alternative != nil {
-		return Eval(ie.Alternative, object.NewEnclosedEnvironment(env, false))
+		return Eval(ie.Alternative, object.NewEnclosedEnvironment(env, env.InFor))
 	} else {
 		return NULL
 	}
@@ -811,12 +864,16 @@ func evalEllipsisPrefixOperatorExpression(right object.Object, line int) object.
 }
 
 func evalMinusPrefixOperatorExpression(right object.Object, line int) object.Object {
-	if right.Type() != object.INTEGER_OBJ {
+	switch right.Type() {
+	case object.INTEGER_OBJ:
+		value := right.(*object.Integer).Value
+		return &object.Integer{Value: -value}
+	case object.FLOAT_OBJ:
+		value := right.(*object.Float).Value
+		return &object.Float{Value: -value}
+	default:
 		return newError("Cannot apply minus prefix operator to this type: -%s - line=%d", right.Type(), line)
 	}
-
-	value := right.(*object.Integer).Value
-	return &object.Integer{Value: -value}
 }
 
 func evalBangOperatorExpression(right object.Object) object.Object {

@@ -29,6 +29,7 @@ const (
 	STRUCT_INSTANCE_OBJ = "STRUCT_INSTANCE"
 	SPREAD_OBJ          = "SPREAD"
 	BREAK_OBJ           = "BREAK"
+	CONTINUE_OBJ        = "CONTINUE"
 )
 
 type Builtin struct {
@@ -187,6 +188,11 @@ type Break struct{}
 
 func (b *Break) Inspect() string  { return "break" }
 func (b *Break) Type() ObjectType { return BREAK_OBJ }
+
+type Continue struct{}
+
+func (b *Continue) Inspect() string  { return "continue" }
+func (b *Continue) Type() ObjectType { return CONTINUE_OBJ }
 
 type StructType struct {
 	Name   *ast.Identifier

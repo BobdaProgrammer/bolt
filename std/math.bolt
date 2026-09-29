@@ -1,0 +1,694 @@
+
+
+pub let pi = 3.14159265358979323
+pub let halfPi = 1.57079632679489661923
+pub let quarterPi = 0.78539816339744830962
+pub let e = 2.71828182845904523536
+pub let tau = 6.28318530717958647692
+pub let phi = 1.61803398874989484820
+
+let NaN = fn(x){
+    return typeof(x) != "INT" && typeof(x) != "FLOAT"
+}
+
+pub let trunc = fn(x){
+    if x < 0{
+        return floor(x)+1
+    }
+    return floor(x)
+}
+
+pub let sign = fn(x){
+    let fl = float(x)
+    if typeof(fl) != "FLOAT"{
+        return null
+    }
+
+    if fl < 0{
+        return -1
+    }
+    if fl == 0{
+        return 0
+    }
+    return 1
+}
+
+// Square roots x
+pub let sqrt = fn(x) {
+    if x < 0 {
+        return null
+    }
+
+    if x == 0 {
+        return 0
+    }
+
+    let guess = x
+
+    let i = 0
+
+    for i < 100 {
+        let next = 0.5 * (guess + x / guess)
+
+        if abs(next - guess) < 0.000000000000001 {
+            return cleanFloat(next)
+        }
+
+        guess = next
+        i = i + 1
+    }
+
+    return cleanFloat(guess)
+}
+let gcd = fn(a, b) {
+    a = abs(a)
+    b = abs(b)
+
+    for b != 0 {
+        let temp = b
+        b = a % b
+        a = temp
+    }
+
+    return a
+}
+
+
+
+
+pub let exactNthRoot = fn(x, n) {
+    if n == 1 {
+        return x
+    }
+
+    if x == 0 {
+        return 0
+    }
+
+    if x < 0 {
+        if n % 2 == 0 {
+            return null
+        }
+
+        let result = exactNthRoot(-x, n)
+
+        if result == null {
+            return null
+        }
+
+        return -result
+    }
+
+    let low = 0
+    let high = x
+
+    for low <= high {
+        let mid = floor((low + high) / 2)
+        let value = intPow(mid, n)
+
+        if value == x {
+            return mid
+        }
+
+        if value < x {
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
+
+    return null
+}
+
+
+pub let rationalize = fn(x) {
+    let tolerance = 0.000000000001
+    let maxDenominator = 1000000
+
+    // Continued fraction
+    let sign = 1
+
+    if x < 0 {
+        sign = -1
+        x = -x
+    }
+
+    let a0 = floor(x)
+
+    let numerator0 = 1
+    let numerator1 = a0
+
+    let denominator0 = 0
+    let denominator1 = 1
+
+    let value = x
+
+    let numerator = numerator1
+    let denominator = denominator1
+
+    if abs(value - numerator / denominator) <= tolerance {
+        return {
+            "numerator": numerator * sign,
+            "denominator": denominator
+        }
+    }
+
+    let previousNumerator = numerator0
+    let currentNumerator = numerator1
+
+    let previousDenominator = denominator0
+    let currentDenominator = denominator1
+
+    let remainder = value - floor(value)
+
+    for remainder != 0 {
+        if currentDenominator > maxDenominator {
+            break
+        }
+
+        let inverse = 1 / remainder
+        let coefficient = floor(inverse)
+
+        let nextNumerator = coefficient * currentNumerator + previousNumerator
+
+        let nextDenominator = coefficient * currentDenominator + previousDenominator
+
+        if nextDenominator > maxDenominator {
+            break
+        }
+
+        let approximation = nextNumerator / nextDenominator
+
+        if abs(value - approximation) <= tolerance {
+            return { "numerator": nextNumerator * sign, "denominator": nextDenominator}
+        }
+
+        previousNumerator = currentNumerator
+        currentNumerator = nextNumerator
+
+        previousDenominator = currentDenominator
+        currentDenominator = nextDenominator
+
+        remainder = inverse - coefficient
+    }
+
+    return null
+}
+
+
+pub let cleanFloat = fn(x) {
+    let nearest = round(x)
+
+    if abs(x - nearest) < 0.000000000001 {
+        return nearest
+    }
+
+    return x
+}
+
+
+let rationalPower = fn(x, p, q) {
+    if p == 0 {
+        return 1
+    }
+
+    if p < 0 {
+        return 1 / rationalPower(x, -p, q)
+    }
+
+    if q == 1 {
+        return intPow(x, p)
+    }
+
+    //
+    // Exact root first.
+    //
+    let root = exactNthRoot(x, q)
+
+    if root != null {
+        return cleanFloat(intPow(root, p))
+    }
+
+    //
+    // Make sure this is floating-point division.
+    //
+    let exponent = float(p) / float(q)
+
+    return cleanFloat(
+        exp(exponent * ln(x))
+    )
+}
+let intPow = fn(base, exponent) {
+    if exponent == 0 {
+        return 1
+    }
+
+    if exponent < 0 {
+        return 1 / intPow(base, -exponent)
+    }
+
+    let result = 1
+
+    for exponent > 0 {
+        if exponent % 2 == 1 {
+            result = result * base
+        }
+
+        base = base * base
+        exponent = floor(exponent / 2)
+    }
+
+    return result
+}
+pub let ln = fn(x) {
+    if x <= 0 {
+        return null
+    }
+
+    if x == 1 {
+        return 0
+    }
+
+    let ln2 = 0.6931471805599453
+
+    //
+    // Reduce x into approximately [1, 2)
+    //
+    let k = 0
+
+    for x >= 2 {
+        x = x / 2
+        k = k + 1
+    }
+
+    for x < 1 {
+        x = x * 2
+        k = k - 1
+    }
+
+    //
+    // ln(x) = 2 * (z + z^3/3 + z^5/5 + ...)
+    //
+    // where:
+    //
+    // z = (x - 1) / (x + 1)
+    //
+
+    let z = (x - 1) / (x + 1)
+    let zSquared = z * z
+
+    let sum = z
+    let term = z
+
+    let n = 3
+
+    for n <= 101 {
+        term = term * zSquared
+        sum = sum + term / n
+        n = n + 2
+    }
+
+    return cleanFloat(
+        2 * sum + k * ln2
+    )
+}
+pub let exp = fn(x) {
+    if x == 0 {
+        return 1
+    }
+
+    let ln2 = 0.6931471805599453
+
+    let n = floor(x / ln2)
+    let r = x - n * ln2
+
+    let sum = 1
+    let term = 1
+
+    let i = 1
+
+    for i <= 30 {
+        term = term * r / i
+        sum = sum + term
+
+        if abs(term) < 0.0000000000000001 {
+            break
+        }
+
+        i = i + 1
+    }
+
+    return cleanFloat(
+        sum * intPow(2, n)
+    )
+}
+pub let powRational = fn(base, p, q) {
+    //
+    // Always reduce the fraction.
+    //
+    let divisor = gcd(p, q)
+
+    p = p / divisor
+    q = q / divisor
+
+    //
+    // Keep denominator positive.
+    //
+    if q < 0 {
+        p = -p
+        q = -q
+    }
+
+    //
+    // Negative base.
+    //
+    if base < 0 {
+        //
+        // Even denominator means an even root.
+        // Negative numbers do not have a real even root.
+        //
+        if q % 2 == 0 {
+            return null
+        }
+
+        let result = rationalPower(-base, p, q)
+
+        //
+        // Odd numerator -> negative result.
+        //
+        if p % 2 != 0 {
+            return -result
+        }
+
+        return result
+    }
+
+    return rationalPower(base, p, q)
+}
+
+
+pub let pow = fn(base, exponent) {
+    //
+    // Special cases
+    //
+
+    if exponent == 0 {
+        return 1
+    }
+
+    if base == 0 {
+        if exponent < 0 {
+            return null
+        }
+
+        return 0
+    }
+
+    //
+    // If the exponent is already an integer,
+    // don't do any floating-point maths.
+    //
+
+    if exponent == floor(exponent) {
+        return intPow(base, exponent)
+    }
+
+    //
+    // Try to recover a simple rational number.
+    //
+    // Examples:
+    //
+    // 0.5  -> 1/2
+    // 0.25 -> 1/4
+    // 0.3333333333333333 -> 1/3
+    //
+
+    let fraction = rationalize(exponent)
+
+    if fraction != null {
+        return powRational(
+            base,
+            fraction["numerator"],
+            fraction["denominator"]
+        )
+    }
+
+    //
+    // Completely general floating-point exponent.
+    //
+
+    if base < 0 {
+        return null
+    }
+
+    return cleanFloat(
+        exp(exponent * ln(base))
+    )
+}
+// Returns the sine of the radian argument x
+pub let sin = fn(x) {
+    let twoPi = 2 * pi
+
+    // Reduce x to [-pi, pi]
+    x = x % twoPi
+
+    if x > pi {
+        x = x - twoPi
+    }
+
+    if x < -pi {
+        x = x + twoPi
+    }
+
+    // Further reduce to [-pi/2, pi/2]
+    if x > pi / 2 {
+        x = pi - x
+    }
+
+    if x < -pi / 2 {
+        x = -pi - x
+    }
+
+    // Taylor series
+    let term = x
+    let sum = x
+
+    for i = range 30 {
+        let n = 2 * (i+1)
+        term = -term * x * x / ((n) * (n + 1))
+        sum = sum + term
+
+        if abs(term) < 0.0000000000000001 {
+            break
+        }
+    }
+
+    return cleanFloat(sum)
+}
+
+// Returns the arcsine of x in radians
+pub let asin = fn(x) {
+    if x > 1 || x < -1 {
+        return NaN
+    }
+
+    if x == 1 {
+        return halfPi
+    }
+
+    if x == -1 {
+        return -halfPi
+    }
+
+    return atan(x / sqrt(1 - x * x))
+}
+// Returns the hyperbolic sine of x
+pub let sinh = fn(x) {
+    return (exp(x) - exp(-x)) / 2
+}
+// Returns the cosine of radian argument x
+pub let cos = fn(x) {
+    let pi = 3.141592653589793
+    let twoPi = 2 * pi
+
+    // Reduce x to [-pi, pi]
+    x = x % twoPi
+
+    if x > pi {
+        x = x - twoPi
+    }
+
+    if x < -pi {
+        x = x + twoPi
+    }
+
+    // cos(x) = 1 - x²/2! + x⁴/4! - x⁶/6! + ...
+    let sum = 1.0
+    let term = 1.0
+
+    for i = range 30 {
+        let n = 2 * (i+1)
+
+        term = -term * x * x / ((n - 1) * n)
+        sum = sum + term
+
+        if abs(term) < 0.0000000000000001 {
+            break
+        }
+    }
+
+    return cleanFloat(sum)
+}
+
+// Returns the arccosine of x in radians
+pub let acos = fn(x) {
+    if x > 1 || x < -1 {
+        return NaN
+    }
+
+    return halfPi - asin(x)
+}
+// Returns the hyperbolic cosine of x
+pub let cosh = fn(x) {
+    return (exp(x) + exp(-x)) / 2
+}
+// Returns the tangent of the radian argument x
+pub let tan = fn(x) {
+    let cosine = cos(x)
+
+    // tan(x) is undefined when cos(x) == 0
+    if abs(cosine) < 0.0000000000000001 {
+        return null
+    }
+
+    return cleanFloat(sin(x) / cosine)
+}
+
+// Returns the arctangent of x in radians
+pub let atan = fn(x) {
+    let absX = abs(x)
+
+    if x == 1 {
+        return pi / 4
+    }
+
+    if x == -1 {
+        return -pi / 4
+    }
+
+    if absX > 1 {
+        if x > 0 {
+            return pi / 2 - atan(1 / x)
+        }
+
+        return -pi / 2 - atan(1 / x)
+    }
+
+    let term = x
+    let sum = x
+
+    for i = range 60 {
+        let numerator = 2 * i + 1
+        let denominator = 2 * i + 3
+
+        term = -term * x * x * numerator / denominator
+        sum = sum + term
+
+        if abs(term) < 0.0000000000000001 {
+            break
+        }
+    }
+
+    return cleanFloat(sum)
+}
+// Returns the hyperbolic tangent of x
+pub let tanh = fn(x) {
+    return sinh(x) / cosh(x)
+}
+// Returns the angle of (x, y) in radians
+pub let atan2 = fn(y, x) {
+    if x > 0 {
+        return atan(y / x)
+    }
+
+    if x < 0 && y >= 0 {
+        return atan(y / x) + pi
+    }
+
+    if x < 0 && y < 0 {
+        return atan(y / x) - pi
+    }
+
+    if x == 0 && y > 0 {
+        return halfPi
+    }
+
+    if x == 0 && y < 0 {
+        return -halfPi
+    }
+
+    return NaN
+}
+
+// Returns the absolute value of x
+pub let abs = fn(x){
+    if x < 0{
+        return -x
+    }
+    return x
+}
+
+// Returns the greatest integer value less than or equal to x 
+pub let floor = fn(x) {
+    let i = int(x)
+
+    if x < 0 && x != i {
+        return i - 1
+    }
+
+    return i
+}
+
+// Returns the least integer value greater than or equal to x  
+pub let ceil = fn(x) {
+    let i = int(x)
+
+    if x > 0 && x != i {
+        return i + 1
+    }
+
+    return i
+}
+
+
+// Returns the nearest integer, rounding half away from zero
+pub let round = fn(x) {
+    if x >= 0 {
+        return floor(x + 0.5)
+    }
+
+    return ceil(x - 0.5)
+}
+
+// Clamps val between min max
+pub let clamp = fn(x, mi, ma){
+    let val = max(x, mi)
+    val = min(val, ma)
+    return val
+}
+
+// Returns the lowest of two values x and y
+pub let min = fn(x, y){
+    if x > y{
+        return y
+    }
+    return x
+}
+
+// Returns the highest of the values x and y
+pub let max = fn(x, y){
+    if x > y{
+        return x
+    }
+    return y
+}

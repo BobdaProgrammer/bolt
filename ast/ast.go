@@ -46,6 +46,19 @@ func (p *Program) TokenLiteral() string {
 	}
 }
 
+type ContinueStatement struct {
+	LineNum int
+	Token   token.Token
+}
+
+func (cs *ContinueStatement) String() string {
+	return "continue"
+}
+
+func (cs *ContinueStatement) statementNode()       {}
+func (cs *ContinueStatement) Line() int            { return cs.LineNum }
+func (cs *ContinueStatement) TokenLiteral() string { return cs.Token.Literal }
+
 type BreakStatement struct {
 	LineNum int
 	Token   token.Token

@@ -241,7 +241,11 @@ var builtins = map[string]*object.Builtin{
 					return &object.Integer{Value: 0}
 				}
 			case *object.Float:
-				return &object.Integer{Value: int64(math.Floor(val.Value))}
+				ans := math.Floor(val.Value)
+				if val.Value < 0 {
+					ans = math.Ceil(val.Value)
+				}
+				return &object.Integer{Value: int64(ans)}
 			default:
 				return newError("Cannot convert type %s to type STRING", val)
 			}

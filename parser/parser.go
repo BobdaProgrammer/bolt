@@ -56,6 +56,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.OR, p.parseInfixExpression)
 	p.registerInfix(token.SLASH, p.parseInfixExpression)
 	p.registerInfix(token.ASTERISK, p.parseInfixExpression)
+	p.registerInfix(token.MODULO, p.parseInfixExpression)
 	p.registerInfix(token.EQ, p.parseInfixExpression)
 	p.registerInfix(token.NOT_EQ, p.parseInfixExpression)
 	p.registerInfix(token.LT, p.parseInfixExpression)
@@ -203,7 +204,7 @@ func (p *Parser) parseImport() ast.Statement {
 func (p *Parser) parseFieldAccess(left ast.Expression) ast.Expression {
 	fa := &ast.FieldAccess{Token: p.curToken, LineNum: p.curToken.Line, Left: left}
 	p.nextToken()
-	right := p.parseExpression(LOWEST)
+	right := p.parseExpression(CALL)
 	fa.Right = right
 	return fa
 }
@@ -275,6 +276,9 @@ func (p *Parser) parseBreakStatement() ast.Statement {
 	return &ast.BreakStatement{Token: p.curToken, LineNum: p.curToken.Line}
 }
 
+func (p *Parser) parseContinueStatement() ast.Statement {
+	return &ast.ContinueStatement{Token: p.curToken, LineNum: p.curToken.Line}
+}
 func (p *Parser) parseForExpression() ast.Expression {
 	f := &ast.ForExpression{Token: p.curToken, LineNum: p.curToken.Line}
 	p.nextToken()
@@ -603,6 +607,7 @@ func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
 		Token:    p.curToken,
 		Operator: p.curToken.Literal,
 		Left:     left,
+		LineNum:  p.curToken.Line,
 	}
 
 	precedence := p.curPrecedence()
@@ -704,6 +709,8 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseReturnStatement()
 	case token.BREAK:
 		return p.parseBreakStatement()
+	case token.CONTINUE:
+		return p.parseContinueStatement()
 	case token.STRUCT:
 		return p.parseStructType()
 	case token.IMPORT:
@@ -725,6 +732,7 @@ const (
 	EQUALS      // ==
 	LESSGREATER // > or <
 	SUM         // +
+	MODULO      // %
 	PRODUCT     // *
 	AS          // AS
 	PREFIX      // !X or -X
@@ -743,6 +751,7 @@ var precedences = map[token.TokenType]int{
 	token.GTEQ:     LESSGREATER,
 	token.PLUS:     SUM,
 	token.MINUS:    SUM,
+	token.MODULO:   MODULO,
 	token.SLASH:    PRODUCT,
 	token.ASTERISK: PRODUCT,
 	token.LPAREN:   CALL,

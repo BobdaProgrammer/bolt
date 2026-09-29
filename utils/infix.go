@@ -155,6 +155,8 @@ func evalFloatInfixExpression(operator string, left, right object.Object, line i
 		return &object.Float{Value: leftVal + rightVal}
 	case "-":
 		return &object.Float{Value: leftVal - rightVal}
+	case "%":
+		return &object.Float{Value: math.Mod(leftVal, rightVal)}
 	case "*":
 		return &object.Float{Value: leftVal * rightVal}
 	case "/":
@@ -185,6 +187,8 @@ func evalIntegerInfixExpression(operator string, left, right object.Object, line
 		return &object.Integer{Value: leftVal - rightVal}
 	case "*":
 		return &object.Integer{Value: leftVal * rightVal}
+	case "%":
+		return &object.Integer{Value: leftVal % rightVal}
 	case "/":
 		val := float64(leftVal) / float64(rightVal)
 		if val == math.Trunc(val) {

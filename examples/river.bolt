@@ -27,7 +27,10 @@ for true{
     let choice = input(question)
     if choice != "chicken" && choice != "grain" && choice != "fox" && choice != "farmer"{
         log("invalid")
-    }else{
+        continue
+    }
+    log("after")
+
         if choice == "chicken"{
             farmer = -farmer
             chicken = -chicken
@@ -40,7 +43,7 @@ for true{
         } else if choice == "farmer"{
             farmer = -farmer
         }
-    }
+
 
     let checks = runChecks()
     if checks != null{

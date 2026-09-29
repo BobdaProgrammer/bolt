@@ -9,24 +9,25 @@ type Token struct {
 }
 
 var keywords = map[string]TokenType{
-	"fn":     FUNCTION,
-	"let":    LET,
-	"true":   TRUE,
-	"false":  FALSE,
-	"if":     IF,
-	"else":   ELSE,
-	"for":    FOR,
-	"return": RETURN,
-	"range":  RANGE,
-	"break":  BREAK,
-	"struct": STRUCT,
-	"new":    NEW,
-	"import": IMPORT,
-	"pub":    PUB,
-	"as":     AS,
-	"switch": SWITCH,
-	"case":   CASE,
-	"null":   NULL,
+	"fn":       FUNCTION,
+	"let":      LET,
+	"true":     TRUE,
+	"false":    FALSE,
+	"if":       IF,
+	"else":     ELSE,
+	"for":      FOR,
+	"return":   RETURN,
+	"range":    RANGE,
+	"break":    BREAK,
+	"continue": CONTINUE,
+	"struct":   STRUCT,
+	"new":      NEW,
+	"import":   IMPORT,
+	"pub":      PUB,
+	"as":       AS,
+	"switch":   SWITCH,
+	"case":     CASE,
+	"null":     NULL,
 }
 
 func LookupIdent(ident string) TokenType {
@@ -57,6 +58,7 @@ const (
 	BANG        = "!"
 	ELLIPSIS    = "..."
 	ASTERISK    = "*"
+	MODULO      = "%"
 	SLASH       = "/"
 	AND         = "&&"
 	OR          = "||"
@@ -100,6 +102,7 @@ const (
 	FOR      = "FOR"
 	RANGE    = "RANGE"
 	BREAK    = "BREAK"
+	CONTINUE = "CONTINUE"
 	STRUCT   = "STRUCT"
 	NEW      = "NEW"
 	IMPORT   = "IMPORT"

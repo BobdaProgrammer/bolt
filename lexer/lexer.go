@@ -40,6 +40,8 @@ Outer:
 	l.skipWhitespace()
 
 	switch l.ch {
+	case '%':
+		tok = l.newToken(token.MODULO, l.ch)
 	case '=':
 		if l.peekChar() == '=' {
 			ch := l.ch
