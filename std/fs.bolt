@@ -1,3 +1,5 @@
+import "strings"
+
 struct File{
     name,
     path,
@@ -8,6 +10,51 @@ struct File{
     append,
     close
 }
+
+struct Filepath{}
+
+pub let filepath = new Filepath{}
+
+// TODO: filepath work
+let Filepath.Ext = fn(x){
+    if typeof(x) != "STRING" && typeof(x) != "File"{
+        return error("File path must be of type string or file")
+    }
+
+    let name = x
+    if tyeof(x) == "File"{
+        name == x.name
+    }
+
+    if !strings.contains(name, "."){
+        return null
+    }
+
+    // get rid of trailing / or \
+    name = strings.trimRight(strings.trimRight("name", "/"), "\")
+
+    if name == ""{
+        return null
+    }
+
+    // TODO: handle if path is "hello/bob\this/that.txt" also "that.bob.txt"
+    let slash = "/"
+    if strings.contains(name, "\") && !strings.contains(name, "/"){
+        slash = "\"
+    }else if !strings.contains(name, "/") && strings.contains(name, "."){
+        let ext = last[strings.indexOf(name, "."):len(name)] 
+        return ext
+    }
+    let list = strings.split(name, slash)
+    let last = list[len(list)-1]
+    if strings.contains(last, "."){
+        let ext = last[strings.indexOf(last, "."):len(last)]
+        return ext
+    }else{
+        return null
+    }
+}
+
 
 pub let closeAll = fn(){
     GOSTDCALLsyscall("closeall")

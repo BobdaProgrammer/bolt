@@ -1,5 +1,7 @@
 import "math"
 
+// TODO: something like fmt.Sprint or fmt.Sprintf
+
 pub let lower = fn(x){
     if typeof(x) != "STRING"{
         return null

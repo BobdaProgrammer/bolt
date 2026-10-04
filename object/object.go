@@ -86,9 +86,10 @@ func (e *Error) Inspect() string  { return "ERROR: " + e.Message }
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
 
 type Function struct {
-	Parameters []*ast.Identifier
-	Body       *ast.BlockStatement
-	Env        *Environment
+	Parameters   []*ast.Identifier
+	Body         *ast.BlockStatement
+	Env          *Environment
+	StructMethod *StructType
 }
 
 func (f *Function) Type() ObjectType {
@@ -196,8 +197,9 @@ func (b *Continue) Inspect() string  { return "continue" }
 func (b *Continue) Type() ObjectType { return CONTINUE_OBJ }
 
 type StructType struct {
-	Name   *ast.Identifier
-	Fields []*ast.Identifier
+	Name    *ast.Identifier
+	Fields  []*ast.Identifier
+	Methods map[string]*Function
 }
 
 func (st *StructType) Inspect() string {

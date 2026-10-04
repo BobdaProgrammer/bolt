@@ -164,7 +164,14 @@ func syscallOpen(args []object.Object) object.Object {
 		return &object.UserError{Message: "failed to resolve file path: " + err.Error()}
 	}
 
-	structinstance.Fields["name"] = &object.String{Value: file.Name()}
+	info, err := file.Stat()
+	var name string
+	if err == nil {
+		name = info.Name()
+	} else {
+		name = file.Name()
+	}
+	structinstance.Fields["name"] = &object.String{Value: name}
 	structinstance.Fields["path"] = &object.String{Value: path}
 
 	openFiles[path] = file

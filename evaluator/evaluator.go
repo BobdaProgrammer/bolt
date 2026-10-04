@@ -299,7 +299,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.FunctionLiteral:
 		params := node.Parameters
 		body := node.Body
-		return &object.Function{Parameters: params, Body: body, Env: env}
+		return &object.Function{Parameters: params, Body: body, Env: env, StructMethod: nil}
 	case *ast.ForExpression:
 		return evalForExpression(node, env)
 	case *ast.FieldAccess:
@@ -318,6 +318,14 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			returnVal := std.StandardGoCallFunction(val, args)
 			return returnVal
 		}
+		var methodVal *object.StructInstance = nil
+		if fa, ok := node.Function.(*ast.FieldAccess); ok {
+			res := Eval(fa.Left, env)
+			if isError(res) {
+				return res
+			}
+			methodVal = res.(*object.StructInstance)
+		}
 		function := Eval(node.Function, env)
 		if isError(function) {
 			return function
@@ -326,7 +334,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if len(args) == 1 && isError(args[0]) {
 			return args[0]
 		}
-		return applyFunction(function, args, node.Line())
+		return applyFunction(function, args, node.Line(), methodVal)
 	case *ast.StringLiteral:
 		return &object.String{Value: node.Value}
 	case *ast.ArrayLiteral:
@@ -465,6 +473,19 @@ func evalFieldAccessAssignment(left object.Object, right ast.Expression, value o
 		} else {
 			return newError("Cannot use non identifier in field access on %s - line=%d", left.Type(), right.Line())
 		}
+	case *object.StructType:
+		if r, ok := right.(*ast.Identifier); ok {
+			if fn, ok := value.(*object.Function); ok {
+				fn.StructMethod = left
+				left.Methods[r.Value] = fn
+				return nil
+			} else {
+
+				return newError("Cannot use struct method notation syntax (<StructType>.<FunctionName>) but set the method to a non function: %s - line=%d", value.Type(), right.Line())
+			}
+		} else {
+			return newError("Cannot use non identifier in field access on %s - line=%d", left.Type(), right.Line())
+		}
 	default:
 		return newError("Cannot use field access on %s - line=%d", left.Type(), right.Line())
 	}
@@ -476,19 +497,25 @@ func evalFieldAccess(left object.Object, right ast.Expression, env *object.Envir
 		if r, ok := right.(*ast.Identifier); ok {
 			value, ok := left.Fields[r.Value]
 			if !ok {
-				return newError("Struct %s Has no field %s - line=%d", left.Type(), right.String(), right.Line())
+				value, ok = left.StType.Methods[r.Value]
+				if !ok {
+					return newError("Struct instance Has no field %s - line=%d", right.String(), right.Line())
+				}
 			}
 			return value
 		} else if r, ok := right.(*ast.CallExpression); ok {
 			value, ok := left.Fields[r.Function.(*ast.Identifier).Value]
 			if !ok {
-				return newError("Struct %s Has no function field %s - line=%d", left.Type(), right.String(), right.Line())
+				value, ok = left.StType.Methods[r.Function.(*ast.Identifier).Value]
+				if !ok {
+					return newError("Struct %s of struct type %s Has no function field %s - line=%d", left.Type(), left.StType.Name.Value, right.String(), right.Line())
+				}
 			}
 			args := evalExpressions(r.Arguments, env)
 			if len(args) == 1 && isError(args[0]) {
 				return args[0]
 			}
-			return applyFunction(value, args, right.Line())
+			return applyFunction(value, args, right.Line(), nil)
 		} else if r, ok := right.(*ast.IndexExpression); ok {
 			value, ok := left.Fields[r.Left.String()]
 			if !ok {
@@ -555,7 +582,7 @@ func evalStructInstantiation(left object.Object, node *ast.StructInstantiation, 
 }
 
 func evalStructStatement(node *ast.StructType, env *object.Environment) object.Object {
-	st := &object.StructType{Name: node.Name, Fields: node.Fields}
+	st := &object.StructType{Name: node.Name, Fields: node.Fields, Methods: map[string]*object.Function{}}
 	if env.Exporting {
 		env.Exports[st.Name.Value] = st
 	}
@@ -776,7 +803,7 @@ func evalArrayIndexExpression(array, index object.Object) object.Object {
 	return arrayObject.Elements[idx]
 }
 
-func applyFunction(fn object.Object, args []object.Object, line int) object.Object {
+func applyFunction(fn object.Object, args []object.Object, line int, methodValue *object.StructInstance) object.Object {
 	switch fn := fn.(type) {
 	case *object.Function:
 		//  Handle special go calling that is only allowed in standard lib
@@ -784,6 +811,9 @@ func applyFunction(fn object.Object, args []object.Object, line int) object.Obje
 			return newError("Function requires %d arguments, recieved %d - line=%d", len(fn.Parameters), len(args), line)
 		}
 		extendedEnv := extendFunctionEnv(fn, args)
+		if fn.StructMethod != nil {
+			extendedEnv.Set(fn.StructMethod.Name.String(), methodValue)
+		}
 		evaluated := Eval(fn.Body, extendedEnv)
 		for i := range extendedEnv.Defers {
 			def := extendedEnv.Defers[len(extendedEnv.Defers)-1-i]

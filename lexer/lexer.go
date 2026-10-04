@@ -114,9 +114,9 @@ Outer:
 		} else {
 			tok = l.newToken(token.DOT, l.ch)
 		}
-	case '"':
+	case '"', '\'', '`':
 		tok.Type = token.STRING
-		tok.Literal = l.readString()
+		tok.Literal = l.readString(l.ch)
 		tok.Line = l.line
 	case '/':
 		if l.peekChar() == '/' {
@@ -197,13 +197,13 @@ Outer:
 
 }
 
-func (l *Lexer) readString() string {
+func (l *Lexer) readString(strChar byte) string {
 	str := ""
 
 	for {
 		l.readChar()
 
-		if l.ch == '"' || l.ch == 0 {
+		if l.ch == strChar || l.ch == 0 {
 			break
 		}
 

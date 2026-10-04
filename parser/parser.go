@@ -266,6 +266,9 @@ func (p *Parser) parseStructType() ast.Statement {
 	}
 	p.nextToken()
 	s.Fields = []*ast.Identifier{}
+	if p.curTokenIs(token.RBRACE) {
+		return s
+	}
 	for !p.peekTokenIs(token.RBRACE) || !p.peekTokenIs(token.EOF) {
 		ident := p.parseIdentifier().(*ast.Identifier)
 		s.Fields = append(s.Fields, ident)
