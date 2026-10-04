@@ -4,8 +4,8 @@ type Module struct {
 	Env *Environment
 }
 
-func CreateNewModule() *Module {
+func CreateNewModule(isStd bool) *Module {
 	return &Module{
-		Env: NewEnvironment(false),
+		Env: NewEnvironment(false, isStd),
 	}
 }

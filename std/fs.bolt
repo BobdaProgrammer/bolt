@@ -1,0 +1,36 @@
+struct File{
+    name,
+    path,
+
+    // functions
+    read,
+    write,
+    append,
+    close
+}
+
+pub let closeAll = fn(){
+    GOSTDCALLsyscall("closeall")
+}
+
+pub let open = fn(x){
+    // returns a File struct
+    let f = new File{}
+    let err = GOSTDCALLsyscall("open", f, x)
+    if typeof(err) == "ERROR"{
+        return error("Cannot open file: "+x)
+    }
+    f.read = fn(){
+        return GOSTDCALLsyscall("read", f.path)
+    }
+    f.write = fn(x){
+        return GOSTDCALLsyscall("write", f.path, x)
+    }
+    f.append = fn(x){
+        return GOSTDCALLsyscall("append", f.path, x)
+    }
+    f.close = fn(){
+        return GOSTDCALLsyscall("close", f.path)
+    }
+    return f
+}

@@ -1,0 +1,299 @@
+import "math"
+
+pub let lower = fn(x){
+    if typeof(x) != "STRING"{
+        return null
+    }
+
+    return GOSTDCALLlower(x)
+}
+
+
+pub let upper = fn(x){
+    if typeof(x) != "STRING"{
+        return null
+    }
+
+    return GOSTDCALLupper(x)
+}
+
+pub let repeat = fn(str, num){
+    if typeof(str)!="STRING"||math.isNaN(num){
+        return null 
+    }
+
+    if num > 0{
+        return str * num
+    }else{
+        return null
+    }
+}
+
+let find = fn(str, sub){
+    if typeof(sub) != "STRING" || typeof(str) != "STRING"{
+        return false, -1
+    }
+    if len(sub)>len(str)||len(sub) == 0{
+        return false, -1
+    }
+    for i = range str{
+        let window = str[i:math.min(i+len(sub), len(str))]
+        if window == sub{
+            return true, i
+        }
+    }
+    return false, -1
+}
+
+pub let contains = fn(str, item){
+    if typeof(item) != "STRING" || typeof(str) != "STRING"{
+        return false
+    }
+    if len(item)>len(str)||len(item) == 0{
+        return false
+    }
+    let [exists] = find(str, item)
+    if exists == true{
+        return true
+    }else{
+        return false
+    }
+}
+
+pub let indexOf = fn(str, item){
+    if typeof(item) != "STRING" || typeof(str) != "STRING"{
+        return -1
+    }
+    if len(item)>len(str)||len(item) == 0{
+        return -1
+    }
+    let [exists, index] = find(str, item)
+    if exists == true{
+        return index
+    }else{
+        return -1
+    }
+}
+
+pub let reverse = fn(s){
+    let str = copy(s)
+    let left = 0
+    let right = len(str)-1
+    let temp = ""
+
+    for left < right{
+        temp = str[left]
+        str[left] = str[right]
+        str[right] = temp
+
+        left += 1
+        right -= 1
+    }
+    return str
+}
+
+pub let lastIndexOf = fn(str, item){
+    if typeof(item) != "STRING" || typeof(str) != "STRING"{
+        return -1
+    }
+    if len(item)>len(str)||len(item) == 0{
+        return -1
+    }
+    str = reverse(str)
+
+    let [exists, index] = find(str, item)
+    if exists == true{
+        return len(str) - index - 1
+    }else{
+        return -1
+    }
+}
+
+pub let trimLeft = fn(s, cutset) {
+    let start = 0
+
+    for i = range len(s) {
+        if !contains(cutset, s[i]) {
+            start = i
+            break
+        }
+    }
+
+    return s[start:len(s)]
+}
+
+pub let trimLeftFn = fn(s, func) {
+    if typeof(func) != "FUNCTION"{
+        return null
+    }
+
+    let start = 0
+
+    for i = range len(s){
+        let res = func(s[i])
+        if res == false || res == null {
+            start = i
+            break
+        }
+    }
+
+    return s[start:len(s)] 
+}
+pub let isWhitespace = fn(c) {
+    return c == " " ||
+           c == "\t" ||
+           c == "\n" ||
+           c == "\r" ||
+           c == "\v" ||
+           c == "\f"
+}
+pub let trimRight = fn(s, cutset) {
+    let end = len(s)
+
+    for i = range len(s) {
+        let j = len(s) - 1 - i
+
+        if !contains(cutset, s[j]) {
+            end = j + 1
+            break
+        }
+    }
+
+    return s[0:end]
+}
+pub let trimRightFn = fn(s, func) {
+    if typeof(func) != "FUNCTION"{
+        return null
+    }
+
+    let end = 0
+
+    for i = range len(s){
+        let j = len(s) - 1 - i
+        let res = func(s[j])
+        if res == false||res==null {
+            end = j+1
+            break
+        }
+    }
+
+    return s[0:end] 
+}
+pub let trim = fn(s, cutset) {
+    return trimRight(trimLeft(s, cutset), cutset)
+}
+
+pub let trimFn = fn(s, func) {
+    return trimRightFn(trimLeftFn(s, func), func)
+}
+
+pub let trimWhitespace = fn(s) {
+    return trimFn(s, isWhitespace)
+}
+
+pub let trimLeftWhitespace = fn(s) {
+    return trimLeftfn(s, isWhitespace)
+}
+
+pub let trimRightWhitespace = fn(s) {
+    return trimRightfn(s, isWhitespace)
+}
+
+pub let split = fn(str, sep){
+    if typeof(sep) != "STRING" || typeof(str) != "STRING"{
+        return []
+    }
+    if len(sep)>len(str){
+        return []
+    }
+    let arr = []
+    let curr = ""
+    let next = 0
+    for i = range str{
+        if i < next{
+            continue
+        }
+        let window = str[i:math.min(i+len(sep), len(str))]
+
+        // if splitting by "", then dont split the 0th char
+        if !(sep == "" && i == 0) && window == sep{
+            arr = push(arr, curr)
+            curr = ""
+            next = i+len(sep)
+            log("Splitter", i)
+            if len(sep)>0{
+                continue
+            }
+        }
+        curr += str[i]
+    }
+    arr = push(arr, curr)
+    return arr
+}
+
+pub let join = fn(arr, sep){
+    if typeof(arr) != "ARRAY" || typeof(sep) != "STRING"{
+        return ""
+    }
+    let res = ""
+    for i, val = range arr{
+        res += string(val)
+        if i != len(arr)-1{
+            res += sep
+        }
+    }
+    return res
+}
+
+pub let startsWith = fn(str, prefix){
+    if typeof(str) != "STRING" || typeof(prefix) != "STRING"{
+        return false
+    }
+    if len(prefix) > len(str){
+        return false
+    }
+
+    return str[0:len(prefix)] == prefix
+}
+
+
+pub let endsWith = fn(str, suffix){
+    if typeof(str) != "STRING" || typeof(suffix) != "STRING"{
+        return false
+    }
+    if len(suffix) > len(str){
+        return false
+    }
+
+    return str[len(str)-len(suffix):len(str)] == suffix
+}
+
+pub let replace = fn(s, old, newval){
+    let newstr = ""
+    if typeof(s) == "STRING" && typeof(old) == "STRING" && typeof(newval) == "STRING" && len(old) < len(s){
+        newstr = copy(s)
+        let ind = indexOf(newstr, old)
+        if ind != -1{
+            newstr = newstr[0:ind] + newval + newstr[ind+len(old):len(newstr)] 
+        }
+    }
+    return newstr
+}
+
+pub let replaceAll = fn(s, old, newval){
+    let newstr = ""
+    if typeof(s) == "STRING" && typeof(old) == "STRING" && typeof(newval) == "STRING" && len(old) < len(s){
+        newstr = copy(s) 
+        let res = ""
+        let ind = indexOf(newstr, old)
+        for ind != -1{
+            newstr = replace(newstr, old, newval)
+            res += newstr[0: ind + len(newval)]
+            newstr = newstr[ind+len(newval):len(newstr)]
+            ind = indexOf(newstr, old)
+        }
+        res += newstr
+        return res
+    }
+    return newstr
+}

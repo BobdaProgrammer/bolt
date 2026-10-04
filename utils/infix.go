@@ -99,10 +99,16 @@ func evalStringAndIntegerInfixExpression(operator string, left, right object.Obj
 		if left.Type() == object.STRING_OBJ {
 			leftVal := left.(*object.String).Value
 			rightVal := right.(*object.Integer).Value
+			if rightVal < 1 {
+				return NULL
+			}
 			return &object.String{Value: strings.Repeat(leftVal, int(rightVal))}
 		} else {
 			leftVal := left.(*object.Integer).Value
 			rightVal := right.(*object.String).Value
+			if leftVal < 1 {
+				return NULL
+			}
 			return &object.String{Value: strings.Repeat(rightVal, int(leftVal))}
 		}
 	} else {

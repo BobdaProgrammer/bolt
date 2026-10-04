@@ -17,7 +17,7 @@ const (
 	NULL_OBJ            = "NULL"
 	INTEGER_OBJ         = "INTEGER"
 	BOOLEAN_OBJ         = "BOOLEAN"
-	ERROR_OBJ           = "ERROR"
+	ERROR_OBJ           = "PROGRAMERROR"
 	RETURN_VALUE_OBJ    = "RETURN_VALUE"
 	FUNCTION_OBJ        = "FUNCTION"
 	STRING_OBJ          = "STRING"
@@ -30,6 +30,7 @@ const (
 	SPREAD_OBJ          = "SPREAD"
 	BREAK_OBJ           = "BREAK"
 	CONTINUE_OBJ        = "CONTINUE"
+	USERERROR_OBJ       = "ERROR"
 )
 
 type Builtin struct {
@@ -236,4 +237,13 @@ func (sp *Spread) Inspect() string {
 	}
 
 	return strings.Join(els, ", ")
+}
+
+type UserError struct {
+	Message string
+}
+
+func (ue *UserError) Type() ObjectType { return USERERROR_OBJ }
+func (ue *UserError) Inspect() string {
+	return "error: " + ue.Message
 }

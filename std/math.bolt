@@ -7,7 +7,58 @@ pub let e = 2.71828182845904523536
 pub let tau = 6.28318530717958647692
 pub let phi = 1.61803398874989484820
 
-let NaN = fn(x){
+let ln2 = 0.6931471805599453
+let NaN = null
+let ln10 = 2.302585092994046
+// Returns the base-2 logarithm of x
+pub let log2 = fn(x) {
+    return cleanFloat(log(x) / ln2)
+}
+
+pub let log10 = fn(x) {
+    return cleanFloat(log(x) / ln10)
+}
+
+// Returns ln(1 + x)
+pub let log1p = fn(x) {
+    if x < -1 {
+        return nan
+    }
+
+    if x == -1 {
+        return -inf
+    }
+
+    if x == 0 {
+        return 0
+    }
+
+    // Taylor series converges quickly for small x.
+    if abs(x) < 0.5 {
+        let term = x
+        let sum = x
+
+        for i = range 60 {
+            let n = i + 2
+
+            term = -term * x
+            sum = sum + term / n
+
+            if abs(term) < 0.0000000000000001 {
+                break
+            }
+        }
+
+        return cleanFloat(sum)
+    }
+
+    return log(1 + x)
+}
+// Returns the natural logarithm of x
+pub let log = fn(x, base) {
+    return cleanFloat(ln(x)/ln(base)) 
+}
+pub let isNaN = fn(x){
     return typeof(x) != "INT" && typeof(x) != "FLOAT"
 }
 
@@ -269,7 +320,6 @@ pub let ln = fn(x) {
         return 0
     }
 
-    let ln2 = 0.6931471805599453
 
     //
     // Reduce x into approximately [1, 2)

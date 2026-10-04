@@ -3,6 +3,7 @@ package evaluator
 import (
 	"bolt/ast"
 	"bolt/object"
+	"bolt/std"
 	"bolt/utils"
 	"fmt"
 	"os"
@@ -84,7 +85,28 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		// get exports
 		// add exports to current environment
 		if !strings.HasSuffix(node.Value, ".bolt") {
-			return newError("Import must be a .bolt file - line=%d", node.Line())
+			if std.IsStandardLib(node.Value) {
+				program, module := std.LoadStdPkg(node.Value)
+				if program == nil {
+					return newError("Import file had errors - line=%d", node.Line())
+				}
+				res := Eval(program, module.Env)
+				if isError(res) {
+					err := res.(*object.Error)
+					err.Message = "IMPORT " + node.Value + ".bolt: " + err.Message
+					return err
+				}
+				moduleStruct := &object.StructInstance{}
+				fields := map[string]object.Object{}
+				for export, value := range module.Env.Exports {
+					fields[export] = value
+				}
+				moduleStruct.Fields = fields
+				env.Set(node.Value, moduleStruct)
+				break
+			} else {
+				return newError("Import must be a .bolt file or package from standard library - line=%d", node.Line())
+			}
 		}
 		if !utils.FileExists(node.Value) {
 			return newError("Cannot find import: %s - line=%d", node.Value, node.Line())
@@ -92,7 +114,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		path, _ := os.Stat(node.Value)
 		modulename := utils.FileName(path.Name())
 		file := utils.ReadFile(node.Value)
-		program, module := utils.ProcessModule(file)
+		program, module := utils.ProcessModule(file, false)
 		if program == nil {
 			return newError("Import file had errors - line=%d", node.Line())
 		}
@@ -284,6 +306,15 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return evalFieldAccess(left, node.Right, env)
 	case *ast.CallExpression:
+		if env.IsStd && strings.HasPrefix(node.Function.String(), "GOSTDCALL") && len(node.Function.String()) > 9 {
+			val := node.Function.String()[9:]
+			args := evalExpressions(node.Arguments, env)
+			if len(args) == 1 && isError(args[0]) {
+				return args[0]
+			}
+			returnVal := std.StandardGoCallFunction(val, args)
+			return returnVal
+		}
 		function := Eval(node.Function, env)
 		if isError(function) {
 			return function
@@ -373,6 +404,15 @@ func evalIndexAssignExpression(left, index, value object.Object, line int) objec
 		key := hashable.HashKey()
 		hash := left.(*object.Hash)
 		hash.Pairs[key] = object.HashPair{Key: index, Value: value}
+	} else if left.Type() == object.STRING_OBJ && index.Type() == object.INTEGER_OBJ && value.Type() == object.STRING_OBJ {
+		l := left.(*object.String)
+		i := index.(*object.Integer)
+		v := value.(*object.String)
+		if i.Value >= 0 && i.Value < int64(len(l.Value)) {
+			l.Value = l.Value[0:i.Value] + v.Value + l.Value[i.Value+1:len(l.Value)]
+		} else {
+			return newError("Index out of range %d in %s with length %d - line=%d", i.Value, l.Type(), len(l.Value), line)
+		}
 	}
 	return nil
 }
@@ -475,6 +515,13 @@ func evalFieldAccess(left object.Object, right ast.Expression, env *object.Envir
 		} else {
 			return newError("Cannot use non identifier to access struct field. Got=%s - line=%d", right, right.Line())
 		}
+	case *object.UserError:
+		if iden, ok := right.(*ast.Identifier); ok {
+			if iden.Value == "message" {
+				return &object.String{Value: left.Message}
+			}
+		}
+		return newError("type ERROR has no field or function: %s - line=%d", right.String(), right.Line())
 	default:
 		return newError("Cannot use field access on %s - line=%d", left.Type(), right.Line())
 	}
@@ -514,7 +561,7 @@ func evalStructStatement(node *ast.StructType, env *object.Environment) object.O
 }
 
 func evalForExpression(node *ast.ForExpression, env *object.Environment) object.Object {
-	forEnv := object.NewEnclosedEnvironment(env, true)
+	forEnv := object.NewEnclosedEnvironment(env, true, env.IsStd)
 	ranging := false
 	secondVal := false
 	var rang *ast.RangeExpression = nil
@@ -666,6 +713,9 @@ func evalSliceExpression(left, firstInd, secondInd object.Object, line int) obje
 			firstIndObj := firstInd.(*object.Integer)
 			secondIndObj := secondInd.(*object.Integer)
 			if int(firstIndObj.Value) <= len(strObj.Value) && firstIndObj.Value >= 0 && int(secondIndObj.Value) <= len(strObj.Value) && secondIndObj.Value >= 0 {
+				if firstIndObj.Value > secondIndObj.Value {
+					return newError("First index in slice expression is larger than second %s[%d:%d] - line=%d", left.Type(), firstIndObj.Value, secondIndObj.Value, line)
+				}
 				return &object.String{Value: strObj.Value[firstIndObj.Value:secondIndObj.Value]}
 			} else {
 				return newError("Attempting to access index outside of string bounds %s[%d:%d] - line=%d", left.Type(), firstIndObj.Value, secondIndObj.Value, line)
@@ -726,6 +776,7 @@ func evalArrayIndexExpression(array, index object.Object) object.Object {
 func applyFunction(fn object.Object, args []object.Object, line int) object.Object {
 	switch fn := fn.(type) {
 	case *object.Function:
+		//  Handle special go calling that is only allowed in standard lib
 		if len(fn.Parameters) != len(args) {
 			return newError("Function requires %d arguments, recieved %d - line=%d", len(fn.Parameters), len(args), line)
 		}
@@ -740,7 +791,7 @@ func applyFunction(fn object.Object, args []object.Object, line int) object.Obje
 }
 
 func extendFunctionEnv(fn *object.Function, args []object.Object) *object.Environment {
-	env := object.NewEnclosedEnvironment(fn.Env, false)
+	env := object.NewEnclosedEnvironment(fn.Env, false, fn.Env.IsStd)
 	for paramIdx, param := range fn.Parameters {
 		env.Set(param.Value, args[paramIdx])
 	}
@@ -821,9 +872,9 @@ func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Obje
 		return condition
 	}
 	if isTruthy(condition) {
-		return Eval(ie.Consequence, object.NewEnclosedEnvironment(env, env.InFor))
+		return Eval(ie.Consequence, object.NewEnclosedEnvironment(env, env.InFor, env.IsStd))
 	} else if ie.Alternative != nil {
-		return Eval(ie.Alternative, object.NewEnclosedEnvironment(env, env.InFor))
+		return Eval(ie.Alternative, object.NewEnclosedEnvironment(env, env.InFor, env.IsStd))
 	} else {
 		return NULL
 	}

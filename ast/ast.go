@@ -267,11 +267,27 @@ func (ie *IfExpression) String() string {
 	if ie.Condition != nil {
 		out.WriteString(ie.Condition.String())
 	}
-	out.WriteString(" ")
+	out.WriteString("{")
 	out.WriteString(ie.Consequence.String())
+	out.WriteString("}")
 	if ie.Alternative != nil {
-		out.WriteString("else ")
-		out.WriteString(ie.Alternative.String())
+		curr := ie.Alternative
+		for {
+			if curr.Alternative != nil {
+				out.WriteString("else if ")
+				if curr.Condition != nil {
+					out.WriteString(curr.Condition.String())
+				}
+				out.WriteString("{")
+				out.WriteString(curr.Consequence.String())
+				out.WriteString("}")
+				curr = curr.Alternative
+			} else {
+				out.WriteString("else { ")
+				out.WriteString(curr.Consequence.String() + " }")
+				break
+			}
+		}
 	}
 	return out.String()
 }

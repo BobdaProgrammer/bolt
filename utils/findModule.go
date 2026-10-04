@@ -24,7 +24,7 @@ func ReadFile(path string) string {
 	return string(data)
 }
 
-func ProcessModule(file string) (*ast.Program, *object.Module) {
+func ProcessModule(file string, isStd bool) (*ast.Program, *object.Module) {
 	l := lexer.New(file)
 	p := parser.New(l)
 	program := p.ParseProgram()
@@ -34,7 +34,7 @@ func ProcessModule(file string) (*ast.Program, *object.Module) {
 		return nil, &object.Module{}
 	}
 
-	mod := object.CreateNewModule()
+	mod := object.CreateNewModule(isStd)
 	return program, mod
 }
 

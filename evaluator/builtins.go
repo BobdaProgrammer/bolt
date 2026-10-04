@@ -18,7 +18,36 @@ var (
 func SetBuiltinLineNum(l int) {
 	lineNum = l
 }
-
+func cop(args ...object.Object) object.Object {
+	if len(args) != 1 {
+		return wna(1, len(args), "copy(")
+	}
+	val := args[0]
+	switch val := val.(type) {
+	case *object.String:
+		return &object.String{Value: val.Value}
+	case *object.Array:
+		els := []object.Object{}
+		for _, el := range val.Elements {
+			els = append(els, cop(el))
+		}
+		return &object.Array{Elements: els}
+	case *object.Hash:
+		pairs := map[object.HashKey]object.HashPair{}
+		for hashkey, hashpair := range val.Pairs {
+			pairs[hashkey] = object.HashPair{Key: cop(hashpair.Key), Value: cop(hashpair.Value)}
+		}
+		return &object.Hash{Pairs: pairs}
+	case *object.StructInstance:
+		fields := map[string]object.Object{}
+		for str, val := range val.Fields {
+			fields[str] = cop(val)
+		}
+		return &object.StructInstance{Fields: fields, StType: val.StType}
+	default:
+		return val
+	}
+}
 func log(args ...object.Object) object.Object {
 
 	for _, arg := range args {
@@ -176,7 +205,7 @@ var builtins = map[string]*object.Builtin{
 				res = "NULL"
 			case object.RETURN_VALUE_OBJ:
 				res = "RETURN"
-			case object.ERROR_OBJ:
+			case object.USERERROR_OBJ:
 				res = "ERROR"
 			case object.FUNCTION_OBJ:
 				res = "FUNCTION"
@@ -214,8 +243,12 @@ var builtins = map[string]*object.Builtin{
 				return &object.String{Value: strconv.FormatBool(val.Value)}
 			case *object.Float:
 				return &object.String{Value: strconv.FormatFloat(val.Value, 'f', -1, 64)}
+			case *object.Array:
+				return &object.String{Value: val.Inspect()}
+			case *object.Function:
+				return &object.String{Value: val.Inspect()}
 			default:
-				return newError("Cannot convert type %s to type STRING", val)
+				return newError("Cannot convert type %s to type STRING - line=%d", val.Type(), lineNum)
 			}
 		},
 	},
@@ -247,7 +280,7 @@ var builtins = map[string]*object.Builtin{
 				}
 				return &object.Integer{Value: int64(ans)}
 			default:
-				return newError("Cannot convert type %s to type STRING", val)
+				return newError("Cannot convert type %s to type STRING - line=%d", val.Type(), lineNum)
 			}
 		},
 	},
@@ -275,8 +308,25 @@ var builtins = map[string]*object.Builtin{
 			case *object.Float:
 				return val
 			default:
-				return newError("Cannot convert type %s to type STRING", val)
+				return newError("Cannot convert type %s to type STRING - line=%d", val.Type(), lineNum)
 			}
+		},
+	},
+	"copy": {
+		Fn: cop,
+	},
+	"error": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return wna(1, len(args), "error(")
+			}
+
+			str, ok := args[0].(*object.String)
+			if !ok {
+				return newError("Argument to error( must be type STRING, got %s - line=%d", args[0].Type(), lineNum)
+			}
+
+			return &object.UserError{Message: str.Value}
 		},
 	},
 }

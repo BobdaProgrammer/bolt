@@ -1,14 +1,14 @@
 package object
 
-func NewEnclosedEnvironment(outer *Environment, inFor bool) *Environment {
-	env := NewEnvironment(inFor)
+func NewEnclosedEnvironment(outer *Environment, inFor bool, IsStd bool) *Environment {
+	env := NewEnvironment(inFor, IsStd)
 	env.outer = outer
 	return env
 }
 
-func NewEnvironment(inFor bool) *Environment {
+func NewEnvironment(inFor bool, IsStd bool) *Environment {
 	s := make(map[string]Object)
-	return &Environment{store: s, outer: nil, InFor: inFor, Exports: make(map[string]Object), Exporting: false}
+	return &Environment{store: s, outer: nil, InFor: inFor, Exports: make(map[string]Object), Exporting: false, IsStd: IsStd}
 }
 
 type Environment struct {
@@ -17,6 +17,7 @@ type Environment struct {
 	InFor     bool
 	Exports   map[string]Object
 	Exporting bool
+	IsStd     bool
 }
 
 func (e *Environment) Get(name string) (Object, bool) {
