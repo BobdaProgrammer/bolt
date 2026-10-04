@@ -41,6 +41,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
 	p.registerPrefix(token.IF, p.parseIfExpression)
 	p.registerPrefix(token.NULL, p.parseNull)
+	p.registerPrefix(token.DEFER, p.parseDefer)
 	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
 	p.registerPrefix(token.STRING, p.parseStringLiteral)
 	p.registerPrefix(token.LBRACKET, p.parseArrayLiteral)
@@ -73,6 +74,14 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.MULTASSIGN, p.parseAssignmentInfix)
 	p.registerInfix(token.DIVASSIGN, p.parseAssignmentInfix)
 	return p
+}
+
+func (p *Parser) parseDefer() ast.Expression {
+	def := &ast.Defer{Token: p.curToken, LineNum: p.curToken.Line}
+	p.nextToken()
+	exp := p.parseExpression(LOWEST)
+	def.Exp = exp
+	return def
 }
 
 func (p *Parser) parseSwitchExpression() ast.Expression {
@@ -818,6 +827,11 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 	stmt := &ast.ReturnStatement{Token: p.curToken, LineNum: p.curToken.Line}
 
 	p.nextToken()
+	if p.curTokenIs(token.SEMICOLON) {
+		p.nextToken()
+		stmt.ReturnValues = []ast.Expression{}
+		return stmt
+	}
 
 	first := p.parseExpression(LOWEST)
 	values := []ast.Expression{first}

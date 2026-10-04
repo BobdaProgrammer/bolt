@@ -22,7 +22,7 @@ func Start() {
 	}
 	defer rl.Close()
 
-	env := object.NewEnvironment(false, false)
+	env := object.NewEnvironment(false, false, object.PROGRAMENV)
 
 	for {
 		line, err := rl.ReadLine()

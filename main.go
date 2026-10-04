@@ -34,7 +34,7 @@ func main() {
 			return
 		}
 
-		env := object.NewEnvironment(false, false)
+		env := object.NewEnvironment(false, false, object.PROGRAMENV)
 		evaluated := evaluator.Eval(program, env)
 		if evaluated != nil && evaluated.Type() == object.ERROR_OBJ {
 			fmt.Println(fmt.Sprint(evaluated.Inspect(), "\n"))

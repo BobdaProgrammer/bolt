@@ -6,6 +6,6 @@ type Module struct {
 
 func CreateNewModule(isStd bool) *Module {
 	return &Module{
-		Env: NewEnvironment(false, isStd),
+		Env: NewEnvironment(false, isStd, PROGRAMENV),
 	}
 }

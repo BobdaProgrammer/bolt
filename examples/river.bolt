@@ -13,7 +13,6 @@ let runChecks = fn(){
     }
     return null
 }
-
 for true{
     log("farmer - ", if farmer == 1 {"left"}else{"right"})
     log("fox - ", if fox == 1 {"left"}else{"right"})
@@ -29,7 +28,6 @@ for true{
         log("invalid")
         continue
     }
-    log("after")
 
         if choice == "chicken"{
             farmer = -farmer

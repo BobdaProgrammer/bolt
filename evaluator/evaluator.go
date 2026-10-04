@@ -61,6 +61,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			}
 
 		}
+	case *ast.Defer:
+		object.AddDeferToEnv(node, env)
+		break
 	case *ast.IntegerLiteral:
 		return &object.Integer{Value: node.Value}
 	case *ast.FloatLiteral:
@@ -561,7 +564,7 @@ func evalStructStatement(node *ast.StructType, env *object.Environment) object.O
 }
 
 func evalForExpression(node *ast.ForExpression, env *object.Environment) object.Object {
-	forEnv := object.NewEnclosedEnvironment(env, true, env.IsStd)
+	forEnv := object.NewEnclosedEnvironment(env, true, env.IsStd, object.FORENV)
 	ranging := false
 	secondVal := false
 	var rang *ast.RangeExpression = nil
@@ -782,6 +785,13 @@ func applyFunction(fn object.Object, args []object.Object, line int) object.Obje
 		}
 		extendedEnv := extendFunctionEnv(fn, args)
 		evaluated := Eval(fn.Body, extendedEnv)
+		for i := range extendedEnv.Defers {
+			def := extendedEnv.Defers[len(extendedEnv.Defers)-1-i]
+			err := Eval(def, extendedEnv)
+			if isError(err) {
+				return err
+			}
+		}
 		return unwrapReturnValue(evaluated)
 	case *object.Builtin:
 		return fn.Fn(args...)
@@ -791,7 +801,7 @@ func applyFunction(fn object.Object, args []object.Object, line int) object.Obje
 }
 
 func extendFunctionEnv(fn *object.Function, args []object.Object) *object.Environment {
-	env := object.NewEnclosedEnvironment(fn.Env, false, fn.Env.IsStd)
+	env := object.NewEnclosedEnvironment(fn.Env, false, fn.Env.IsStd, object.FUNCTIONENV)
 	for paramIdx, param := range fn.Parameters {
 		env.Set(param.Value, args[paramIdx])
 	}
@@ -872,9 +882,9 @@ func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Obje
 		return condition
 	}
 	if isTruthy(condition) {
-		return Eval(ie.Consequence, object.NewEnclosedEnvironment(env, env.InFor, env.IsStd))
+		return Eval(ie.Consequence, object.NewEnclosedEnvironment(env, env.InFor, env.IsStd, object.IFENV))
 	} else if ie.Alternative != nil {
-		return Eval(ie.Alternative, object.NewEnclosedEnvironment(env, env.InFor, env.IsStd))
+		return Eval(ie.Alternative, object.NewEnclosedEnvironment(env, env.InFor, env.IsStd, object.IFENV))
 	} else {
 		return NULL
 	}
@@ -955,11 +965,25 @@ func evalProgram(stmts []ast.Statement, env *object.Environment) object.Object {
 
 		switch result := result.(type) {
 		case *object.ReturnValue:
+			for i := range env.Defers {
+				def := env.Defers[len(env.Defers)-1-i]
+				err := Eval(def, env)
+				if isError(err) {
+					return err
+				}
+			}
 			return result.Value
 		case *object.Error:
 			return result
 		}
 	}
 
+	for i := range env.Defers {
+		def := env.Defers[len(env.Defers)-1-i]
+		err := Eval(def, env)
+		if isError(err) {
+			return err
+		}
+	}
 	return result
 }

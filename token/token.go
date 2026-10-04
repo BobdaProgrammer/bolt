@@ -28,6 +28,7 @@ var keywords = map[string]TokenType{
 	"switch":   SWITCH,
 	"case":     CASE,
 	"null":     NULL,
+	"defer":    DEFER,
 }
 
 func LookupIdent(ident string) TokenType {
@@ -108,4 +109,5 @@ const (
 	IMPORT   = "IMPORT"
 	PUB      = "PUB"
 	AS       = "AS"
+	DEFER    = "DEFER"
 )

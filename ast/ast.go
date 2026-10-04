@@ -619,3 +619,16 @@ func (sc *SwitchCase) TokenLiteral() string { return sc.Token.Literal }
 func (sc *SwitchCase) String() string {
 	return "case " + sc.Condition.String() + ":" + sc.Consequence.String()
 }
+
+type Defer struct {
+	Token   token.Token
+	LineNum int
+	Exp     Expression
+}
+
+func (d *Defer) expressionNode()      {}
+func (d *Defer) Line() int            { return d.LineNum }
+func (d *Defer) TokenLiteral() string { return d.Token.Literal }
+func (d *Defer) String() string {
+	return "defer " + d.Exp.String()
+}

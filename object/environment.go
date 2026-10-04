@@ -1,23 +1,50 @@
 package object
 
-func NewEnclosedEnvironment(outer *Environment, inFor bool, IsStd bool) *Environment {
-	env := NewEnvironment(inFor, IsStd)
+import "bolt/ast"
+
+type EnvType string
+
+const (
+	FORENV      = "FOR"
+	PROGRAMENV  = "PROGRAM"
+	FUNCTIONENV = "FUNCTION"
+	IFENV       = "IF"
+)
+
+func AddDeferToEnv(def *ast.Defer, env *Environment) {
+	if env.Type == PROGRAMENV || env.Type == FUNCTIONENV {
+		env.Defers = append(env.Defers, def.Exp)
+	} else if env.outer != nil {
+		AddDeferToEnv(def, env.outer)
+	}
+}
+
+func NewEnclosedEnvironment(outer *Environment, InFor bool, IsStd bool, et EnvType) *Environment {
+	env := NewEnvironment(InFor, IsStd, et)
 	env.outer = outer
 	return env
 }
 
-func NewEnvironment(inFor bool, IsStd bool) *Environment {
+func NewEnvironment(InFor bool, IsStd bool, et EnvType) *Environment {
 	s := make(map[string]Object)
-	return &Environment{store: s, outer: nil, InFor: inFor, Exports: make(map[string]Object), Exporting: false, IsStd: IsStd}
+	e := &Environment{store: s, outer: nil, Type: et, Exports: make(map[string]Object), Exporting: false, IsStd: IsStd, Defers: []ast.Expression{}}
+	if InFor {
+		e.InFor = true
+	} else {
+		e.InFor = false
+	}
+	return e
 }
 
 type Environment struct {
 	store     map[string]Object
 	outer     *Environment
+	Type      EnvType
 	InFor     bool
 	Exports   map[string]Object
 	Exporting bool
 	IsStd     bool
+	Defers    []ast.Expression
 }
 
 func (e *Environment) Get(name string) (Object, bool) {
