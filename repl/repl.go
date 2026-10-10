@@ -1,13 +1,13 @@
 package repl
 
 import (
-	"bolt/ast"
-	"bolt/evaluator"
-	"bolt/lexer"
-	"bolt/object"
-	"bolt/parser"
-	"bolt/token"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/ast"
+	"github.com/BobdaProgrammer/bolt/evaluator"
+	"github.com/BobdaProgrammer/bolt/lexer"
+	"github.com/BobdaProgrammer/bolt/object"
+	"github.com/BobdaProgrammer/bolt/parser"
+	"github.com/BobdaProgrammer/bolt/token"
 	"github.com/ergochat/readline"
 	"io"
 	"strings"

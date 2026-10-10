@@ -1,11 +1,11 @@
 package utils
 
 import (
-	"bolt/ast"
-	"bolt/lexer"
-	"bolt/object"
-	"bolt/parser"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/ast"
+	"github.com/BobdaProgrammer/bolt/lexer"
+	"github.com/BobdaProgrammer/bolt/object"
+	"github.com/BobdaProgrammer/bolt/parser"
 	"os"
 	"path/filepath"
 	"strings"

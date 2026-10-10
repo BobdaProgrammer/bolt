@@ -1,7 +1,7 @@
 package std
 
 import (
-	"bolt/object"
+	"github.com/BobdaProgrammer/bolt/object"
 	"io"
 	"os"
 	"path/filepath"

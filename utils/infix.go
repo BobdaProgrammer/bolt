@@ -1,8 +1,8 @@
 package utils
 
 import (
-	"bolt/object"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/object"
 	"math"
 	"strings"
 )

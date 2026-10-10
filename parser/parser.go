@@ -1,10 +1,10 @@
 package parser
 
 import (
-	"bolt/ast"
-	"bolt/lexer"
-	"bolt/token"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/ast"
+	"github.com/BobdaProgrammer/bolt/lexer"
+	"github.com/BobdaProgrammer/bolt/token"
 	"strconv"
 )
 

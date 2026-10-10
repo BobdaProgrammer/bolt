@@ -1,6 +1,6 @@
 package formatter
 
-import "bolt/ast"
+import "github.com/BobdaProgrammer/bolt/ast"
 
 var out string = ""
 

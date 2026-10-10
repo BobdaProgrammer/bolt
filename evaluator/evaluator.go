@@ -1,11 +1,11 @@
 package evaluator
 
 import (
-	"bolt/ast"
-	"bolt/object"
-	"bolt/std"
-	"bolt/utils"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/ast"
+	"github.com/BobdaProgrammer/bolt/object"
+	"github.com/BobdaProgrammer/bolt/std"
+	"github.com/BobdaProgrammer/bolt/utils"
 	"os"
 	"strings"
 )

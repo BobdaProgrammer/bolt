@@ -1,7 +1,7 @@
 package ast
 
 import (
-	"bolt/token"
+	"github.com/BobdaProgrammer/bolt/token"
 	"testing"
 )
 

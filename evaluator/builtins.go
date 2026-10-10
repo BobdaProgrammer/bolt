@@ -1,10 +1,10 @@
 package evaluator
 
 import (
-	"bolt/object"
-	"bolt/utils"
 	"bufio"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/object"
+	"github.com/BobdaProgrammer/bolt/utils"
 	"math"
 	"os"
 	"strconv"

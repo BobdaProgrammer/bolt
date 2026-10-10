@@ -1,7 +1,7 @@
 package lexer
 
 import (
-	"bolt/token"
+	"github.com/BobdaProgrammer/bolt/token"
 	"testing"
 )
 

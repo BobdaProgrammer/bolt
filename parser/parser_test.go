@@ -1,9 +1,9 @@
 package parser
 
 import (
-	"bolt/ast"
-	"bolt/lexer"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/ast"
+	"github.com/BobdaProgrammer/bolt/lexer"
 	"testing"
 )
 

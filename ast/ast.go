@@ -1,8 +1,8 @@
 package ast
 
 import (
-	"bolt/token"
 	"bytes"
+	"github.com/BobdaProgrammer/bolt/token"
 	"strings"
 )
 

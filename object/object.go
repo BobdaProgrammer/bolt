@@ -1,9 +1,9 @@
 package object
 
 import (
-	"bolt/ast"
 	"bytes"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/ast"
 	"hash/fnv"
 	"math"
 	"strings"

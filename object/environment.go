@@ -1,6 +1,6 @@
 package object
 
-import "bolt/ast"
+import "github.com/BobdaProgrammer/bolt/ast"
 
 type EnvType string
 

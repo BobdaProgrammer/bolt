@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bolt/evaluator"
-	"bolt/formatter"
-	"bolt/lexer"
-	"bolt/object"
-	"bolt/parser"
-	"bolt/repl"
 	"fmt"
+	"github.com/BobdaProgrammer/bolt/evaluator"
+	"github.com/BobdaProgrammer/bolt/formatter"
+	"github.com/BobdaProgrammer/bolt/lexer"
+	"github.com/BobdaProgrammer/bolt/object"
+	"github.com/BobdaProgrammer/bolt/parser"
+	"github.com/BobdaProgrammer/bolt/repl"
 	"os"
 	"os/user"
 )

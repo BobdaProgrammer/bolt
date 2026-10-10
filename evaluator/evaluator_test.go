@@ -1,9 +1,9 @@
 package evaluator
 
 import (
-	"bolt/lexer"
-	"bolt/object"
-	"bolt/parser"
+	"github.com/BobdaProgrammer/bolt/lexer"
+	"github.com/BobdaProgrammer/bolt/object"
+	"github.com/BobdaProgrammer/bolt/parser"
 	"testing"
 )
 

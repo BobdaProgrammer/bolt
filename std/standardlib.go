@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"bolt/ast"
-	"bolt/object"
-	"bolt/utils"
+	"github.com/BobdaProgrammer/bolt/ast"
+	"github.com/BobdaProgrammer/bolt/object"
+	"github.com/BobdaProgrammer/bolt/utils"
 )
 
 //go:embed *.bolt net/*.bolt
