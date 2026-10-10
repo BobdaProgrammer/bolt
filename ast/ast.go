@@ -262,7 +262,6 @@ func (ie *IfExpression) Line() int       { return ie.LineNum }
 func (ie *IfExpression) TokenLiteral() string { return ie.Token.Literal }
 func (ie *IfExpression) String() string {
 	var out bytes.Buffer
-	// TODO: handle else if
 	out.WriteString("if")
 	if ie.Condition != nil {
 		out.WriteString(ie.Condition.String())
@@ -373,7 +372,7 @@ type StringLiteral struct {
 func (sl *StringLiteral) expressionNode()      {}
 func (sl *StringLiteral) Line() int            { return sl.LineNum }
 func (sl *StringLiteral) TokenLiteral() string { return sl.Token.Literal }
-func (sl *StringLiteral) String() string       { return sl.TokenLiteral() }
+func (sl *StringLiteral) String() string       { return "\"" + sl.TokenLiteral() + "\"" }
 
 type ArrayLiteral struct {
 	LineNum  int

@@ -1,4 +1,5 @@
 import "strings"
+import "math"
 
 struct File{
     name,
@@ -15,14 +16,15 @@ struct Filepath{}
 
 pub let filepath = new Filepath{}
 
+
 // TODO: filepath work
-let Filepath.Ext = fn(x){
+let Filepath.ext = fn(x){
     if typeof(x) != "STRING" && typeof(x) != "File"{
         return error("File path must be of type string or file")
     }
 
     let name = x
-    if tyeof(x) == "File"{
+    if typeof(x) == "File"{
         name == x.name
     }
 
@@ -31,28 +33,27 @@ let Filepath.Ext = fn(x){
     }
 
     // get rid of trailing / or \
-    name = strings.trimRight(strings.trimRight("name", "/"), "\")
+    name = strings.trimRight(strings.trimRight(name, "/"), "\\")
 
-    if name == ""{
+    if name == ""||strings.endsWith(name, "."){
         return null
     }
+
 
     // TODO: handle if path is "hello/bob\this/that.txt" also "that.bob.txt"
     let slash = "/"
-    if strings.contains(name, "\") && !strings.contains(name, "/"){
-        slash = "\"
+    if strings.contains(name, "\\") || strings.contains(name, "/"){
+        let spl = name[math.max(strings.lastIndexOf(name, "/"), strings.lastIndexOf(name,"\\"))+1:len(name)]
+        if strings.contains(spl, "."){
+            let ext = spl[strings.indexOf(spl, "."):len(spl)]
+            return ext
+        }
     }else if !strings.contains(name, "/") && strings.contains(name, "."){
-        let ext = last[strings.indexOf(name, "."):len(name)] 
+        let ext = name[strings.indexOf(name, "."):len(name)] 
         return ext
     }
-    let list = strings.split(name, slash)
-    let last = list[len(list)-1]
-    if strings.contains(last, "."){
-        let ext = last[strings.indexOf(last, "."):len(last)]
-        return ext
-    }else{
-        return null
-    }
+
+    return null
 }
 
 

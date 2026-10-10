@@ -19,14 +19,14 @@ type Parser struct {
 	peekToken token.Token
 	errors    []string
 
-	parsedTokens int
+	importEnds bool
 
 	prefixParseFns map[token.TokenType]prefixParseFn
 	infixParseFns  map[token.TokenType]infixParseFn
 }
 
 func New(l *lexer.Lexer) *Parser {
-	p := &Parser{l: l, errors: []string{}, parsedTokens: 0}
+	p := &Parser{l: l, errors: []string{}, importEnds: false}
 	p.nextToken()
 	p.nextToken()
 	p.prefixParseFns = make(map[token.TokenType]prefixParseFn)
@@ -49,6 +49,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FOR, p.parseForExpression)
 	p.registerPrefix(token.NEW, p.parseStructInstantiation)
 	p.registerPrefix(token.SWITCH, p.parseSwitchExpression)
+	p.registerPrefix(token.UNTERMINATEDSTRING, p.unterminatedStringError)
 
 	p.infixParseFns = make(map[token.TokenType]infixParseFn)
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -74,6 +75,11 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.MULTASSIGN, p.parseAssignmentInfix)
 	p.registerInfix(token.DIVASSIGN, p.parseAssignmentInfix)
 	return p
+}
+
+func (p *Parser) unterminatedStringError() ast.Expression {
+	p.errors = append(p.errors, fmt.Sprintf("Error: Unterminated string - line %d", p.curToken.Line))
+	return nil
 }
 
 func (p *Parser) parseDefer() ast.Expression {
@@ -194,7 +200,7 @@ func (p *Parser) parsePubStatement() ast.Statement {
 }
 
 func (p *Parser) parseImport() ast.Statement {
-	if p.parsedTokens > 2 {
+	if p.importEnds {
 		p.errors = append(p.errors, fmt.Sprintf("Import statement must precede all statements - line=%d", p.curToken.Line))
 		return nil
 	}
@@ -695,7 +701,6 @@ func (p *Parser) peekError(t token.TokenType) {
 func (p *Parser) nextToken() {
 	p.curToken = p.peekToken
 	p.peekToken = p.l.NextToken()
-	p.parsedTokens++
 }
 
 func (p *Parser) ParseProgram() *ast.Program {
@@ -704,6 +709,11 @@ func (p *Parser) ParseProgram() *ast.Program {
 
 	for !p.curTokenIs(token.EOF) {
 		stmt := p.parseStatement()
+		if !p.importEnds {
+			if _, ok := stmt.(*ast.ImportStatement); !ok {
+				p.importEnds = true
+			}
+		}
 		if stmt != nil {
 			program.Statements = append(program.Statements, stmt)
 		}

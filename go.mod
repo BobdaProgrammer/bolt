@@ -1,4 +1,4 @@
-module bolt
+module github.com/BobdaProgrammer/bolt
 
 go 1.26.0
 

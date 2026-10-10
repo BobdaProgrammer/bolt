@@ -222,7 +222,6 @@ pub let split = fn(str, sep){
             arr = push(arr, curr)
             curr = ""
             next = i+len(sep)
-            log("Splitter", i)
             if len(sep)>0{
                 continue
             }

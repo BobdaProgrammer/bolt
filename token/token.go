@@ -39,8 +39,9 @@ func LookupIdent(ident string) TokenType {
 }
 
 const (
-	ILLEGAL = "ILLEGAL"
-	EOF     = "EOF"
+	ILLEGAL            = "ILLEGAL"
+	UNTERMINATEDSTRING = "UNTERMINATEDSTRING"
+	EOF                = "EOF"
 
 	STRING = "STRING"
 

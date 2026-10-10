@@ -116,7 +116,13 @@ Outer:
 		}
 	case '"', '\'', '`':
 		tok.Type = token.STRING
-		tok.Literal = l.readString(l.ch)
+		lit, valid := l.readString(l.ch)
+		if !valid {
+			tok.Type = token.UNTERMINATEDSTRING
+			tok.Literal = ""
+		} else {
+			tok.Literal = lit
+		}
 		tok.Line = l.line
 	case '/':
 		if l.peekChar() == '/' {
@@ -197,14 +203,18 @@ Outer:
 
 }
 
-func (l *Lexer) readString(strChar byte) string {
+func (l *Lexer) readString(strChar byte) (string, bool) {
 	str := ""
 
 	for {
 		l.readChar()
 
-		if l.ch == strChar || l.ch == 0 {
+		if l.ch == strChar {
 			break
+		}
+
+		if l.ch == 0 {
+			return "", false
 		}
 
 		if l.ch == '\\' {
@@ -236,7 +246,7 @@ func (l *Lexer) readString(strChar byte) string {
 		str += string(rune(l.ch))
 	}
 
-	return str
+	return str, true
 }
 
 func (l *Lexer) readNumber() string {
