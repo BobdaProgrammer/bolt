@@ -1,0 +1,11 @@
+let dict = {"Hello": 12, "bob": [1,2,3], [1,2]: 8, 2: 2, 2.2: 5.5}
+
+struct Person{something}
+
+let bob = new Person{something: {"Hello": 12, "bob": [1,2,3], [1,2]: 8, 2: 2, 2.2: 5.5}}
+
+let x = "hello"
+
+dict[x]
+
+bob.something["hello"]

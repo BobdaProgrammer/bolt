@@ -1,6 +1,7 @@
 struct Person{
     name,
-    age
+    age,
+    job
 }
 
 struct Something{
@@ -12,7 +13,9 @@ let Person.read = fn(){
     return "Name: "+Person.name+"\nAge: "+string(Person.age)
 }
 
-let bob = new Person{name: "bob", age: 20}
+
+let bob = new Person{name: "bob", age: new Person{name:12}}
+bob.age.read
 log(bob.read())
 
 let jeff = new Person{name: "jeff", age: 24}
@@ -20,4 +23,3 @@ log(jeff.read())
 
 // Converting a different struct type to person and then using it to read
 let another = new Something{name: "another person", age: 43}
-log(another as Person.read())

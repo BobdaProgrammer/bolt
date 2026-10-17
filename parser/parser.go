@@ -13,11 +13,16 @@ type (
 	infixParseFn  func(ast.Expression) ast.Expression // parameter is left side
 )
 
+type ParserError struct {
+	Message string
+	Line    int
+}
+
 type Parser struct {
 	l         *lexer.Lexer
 	curToken  token.Token
 	peekToken token.Token
-	errors    []string
+	errors    []ParserError
 
 	importEnds bool
 
@@ -25,8 +30,12 @@ type Parser struct {
 	infixParseFns  map[token.TokenType]infixParseFn
 }
 
+func (p *Parser) newError(line int, format string, args ...any) {
+	p.errors = append(p.errors, ParserError{Message: fmt.Sprintf(format, args...), Line: line})
+}
+
 func New(l *lexer.Lexer) *Parser {
-	p := &Parser{l: l, errors: []string{}, importEnds: false}
+	p := &Parser{l: l, errors: []ParserError{}, importEnds: false}
 	p.nextToken()
 	p.nextToken()
 	p.prefixParseFns = make(map[token.TokenType]prefixParseFn)
@@ -78,7 +87,7 @@ func New(l *lexer.Lexer) *Parser {
 }
 
 func (p *Parser) unterminatedStringError() ast.Expression {
-	p.errors = append(p.errors, fmt.Sprintf("Error: Unterminated string - line %d", p.curToken.Line))
+	p.newError(p.curToken.Line, "Error: Unterminated string - line %d", p.curToken.Line)
 	return nil
 }
 
@@ -106,7 +115,7 @@ func (p *Parser) parseSwitchExpression() ast.Expression {
 	for p.curTokenIs(token.CASE) {
 		cas := ast.SwitchCase{Token: p.curToken, LineNum: p.curToken.Line}
 		if p.peekTokenIs(token.COLON) {
-			p.errors = append(p.errors, fmt.Sprintf("Case in switch statement must have a value to check. cannot use: `case:` - line=%d", p.curToken.Line))
+			p.newError(p.curToken.Line, "Case in switch statement must have a value to check. cannot use: `case:` - line=%d", p.curToken.Line)
 			return nil
 		}
 		p.nextToken()
@@ -139,10 +148,10 @@ func (p *Parser) parseAssignmentInfix(left ast.Expression) ast.Expression {
 	} else if arr, ok := left.(*ast.ArrayLiteral); ok {
 		stmt.Left = arr
 	} else if left != nil {
-		p.errors = append(p.errors, fmt.Sprintf("Cannot use type %s on left side of assign expression - line=%d", left.String(), left.Line()))
+		p.newError(left.Line(), "Cannot use type %s on left side of assign expression - line=%d", left.String(), left.Line())
 		return nil
 	} else {
-		p.errors = append(p.errors, fmt.Sprintf("Cannot use that type on left side of assign expression - line=%d", p.curToken.Line))
+		p.newError(p.curToken.Line, "Cannot use that type on left side of assign expression - line=%d", p.curToken.Line)
 	}
 
 	stmt.Value = infix
@@ -163,10 +172,10 @@ func (p *Parser) parseAssignment(left ast.Expression) ast.Expression {
 	} else if arr, ok := left.(*ast.ArrayLiteral); ok {
 		stmt.Left = arr
 	} else if left != nil {
-		p.errors = append(p.errors, fmt.Sprintf("Cannot use type %s on left side of assign expression - line=%d", left.String(), left.Line()))
+		p.newError(left.Line(), "Cannot use type %s on left side of assign expression - line=%d", left.String(), left.Line())
 		return nil
 	} else {
-		p.errors = append(p.errors, fmt.Sprintf("Cannot use that type on left side of assign expression - line=%d", p.curToken.Line))
+		p.newError(p.curToken.Line, "Cannot use that type on left side of assign expression - line=%d", p.curToken.Line)
 	}
 
 	p.nextToken()
@@ -181,7 +190,7 @@ func (p *Parser) parseAssignment(left ast.Expression) ast.Expression {
 }
 
 func (p *Parser) parseStructTypeConversion(left ast.Expression) ast.Expression {
-	structconversion := &ast.StructTypeConversion{Token: p.curToken}
+	structconversion := &ast.StructTypeConversion{Token: p.curToken, LineNum: p.curToken.Line}
 	structconversion.Left = left.(*ast.Identifier)
 	p.nextToken()
 	structconversion.StType = p.parseIdentifier().(*ast.Identifier)
@@ -193,7 +202,8 @@ func (p *Parser) parsePubStatement() ast.Statement {
 	p.nextToken()
 	stmt := p.parseStatement()
 	if stmt == nil {
-		p.errors = append(p.errors, fmt.Sprintf("Expected statement after 'pub'. line=%d", p.curToken.Line))
+		p.newError(p.curToken.Line, "Expected statement after 'pub'. line=%d", p.curToken.Line)
+		return nil
 	}
 	pub.Stmt = stmt
 	return pub
@@ -201,15 +211,19 @@ func (p *Parser) parsePubStatement() ast.Statement {
 
 func (p *Parser) parseImport() ast.Statement {
 	if p.importEnds {
-		p.errors = append(p.errors, fmt.Sprintf("Import statement must precede all statements - line=%d", p.curToken.Line))
+		p.newError(p.curToken.Line, "Import statement must precede all statements - line=%d", p.curToken.Line)
 		return nil
 	}
 	is := &ast.ImportStatement{Token: p.curToken, LineNum: p.curToken.Line}
 	p.nextToken()
 	importval := p.parseExpression(LOWEST)
+	if importval == nil {
+		p.newError(p.curToken.Line, "Expected string after import. line = %d", p.curToken.Line)
+		return nil
+	}
 	importstr, ok := importval.(*ast.StringLiteral)
 	if !ok {
-		p.errors = append(p.errors, fmt.Sprintf("Expected string after import, got=%s . line=%d", importval.String(), p.curToken.Line))
+		p.newError(p.curToken.Line, "Expected string after import, got=%s . line=%d", importval.String(), p.curToken.Line)
 		return nil
 	}
 	is.Value = importstr.Value
@@ -241,7 +255,7 @@ func (p *Parser) parseStructInstantiation() ast.Expression {
 		p.nextToken()
 		ident := p.parseIdentifier().(*ast.Identifier)
 		if !p.expectPeek(token.COLON) {
-			p.errors = append(p.errors, fmt.Sprintf("Expected colon in between struct value assignment. got=%s . line=%d", p.peekToken.Literal, p.curToken.Line))
+			p.newError(p.curToken.Line, "Expected colon in between struct value assignment. got=%s . line=%d", p.peekToken.Literal, p.curToken.Line)
 			return nil
 		}
 		p.nextToken()
@@ -263,7 +277,7 @@ func (p *Parser) parseStructType() ast.Statement {
 	s := &ast.StructType{Token: p.curToken, LineNum: p.curToken.Line}
 	p.nextToken()
 	if p.curTokenIs(token.LBRACE) {
-		p.errors = append(p.errors, fmt.Sprintf("Struct types must be in format: struct <Identifier> {}. Identifier is missing. got { . line=%d", p.curToken.Line))
+		p.newError(p.curToken.Line, "Struct types must be in format: struct <Identifier> {}. Identifier is missing. got { . line=%d", p.curToken.Line)
 		return nil
 	}
 	s.Name = p.parseIdentifier().(*ast.Identifier)
@@ -282,7 +296,7 @@ func (p *Parser) parseStructType() ast.Statement {
 			p.nextToken()
 			break
 		} else if !p.expectPeek(token.COMMA) {
-			p.errors = append(p.errors, fmt.Sprintf("Expected comma between struct field values. Line=%d", p.curToken.Line))
+			p.newError(p.curToken.Line, "Expected comma between struct field values. Line=%d", p.curToken.Line)
 			return nil
 		}
 		p.nextToken()
@@ -310,7 +324,7 @@ func (p *Parser) parseForExpression() ast.Expression {
 			p.nextToken()
 			val1, ok := f.Condition.(*ast.Identifier)
 			if !ok {
-				p.errors = append(p.errors, fmt.Sprintf("Expected identifier token in range expression. got %s . line=%d", p.curToken.Type, p.curToken.Line))
+				p.newError(p.curToken.Line, "Expected identifier token in range expression. got %s . line=%d", p.curToken.Type, p.curToken.Line)
 				return nil
 			}
 			exp := &ast.RangeExpression{Token: tok, Val1: val1}
@@ -321,20 +335,20 @@ func (p *Parser) parseForExpression() ast.Expression {
 				if ok {
 					exp.Val2 = val2
 				} else {
-					p.errors = append(p.errors, fmt.Sprintf("Expected identifier in range expression, got %s . line=%d", val2.Token.Type, p.curToken.Line))
+					p.newError(p.curToken.Line, "Expected identifier in range expression, got %s . line=%d", val2.Token.Type, p.curToken.Line)
 					return nil
 				}
 				p.nextToken()
 			}
 			if !p.curTokenIs(token.ASSIGN) {
-				p.errors = append(p.errors, fmt.Sprintf("Expected equal token in range expression. got %s . line=%d", p.curToken.Type, p.curToken.Line))
+				p.newError(p.curToken.Line, "Expected equal token in range expression. got %s . line=%d", p.curToken.Type, p.curToken.Line)
 				return nil
 			}
 			if !p.expectPeek(token.RANGE) {
 				return nil
 			}
 			if p.peekTokenIs(token.LBRACE) {
-				p.errors = append(p.errors, fmt.Sprintf("Need an expression to range over inside of for loop range expression. got } . line=%d", p.curToken.Line))
+				p.newError(p.curToken.Line, "Need an expression to range over inside of for loop range expression. got } . line=%d", p.curToken.Line)
 				return nil
 			}
 			p.nextToken()
@@ -538,8 +552,7 @@ func (p *Parser) parseIfExpression() ast.Expression {
 				}
 				p.nextToken()
 				if p.peekTokenIs(token.LBRACE) {
-					msg := fmt.Sprintf("Else if needs condition, got { . line=%d", p.curToken.Line)
-					p.errors = append(p.errors, msg)
+					p.newError(p.curToken.Line, "Else if needs condition, got { . line = %d", p.curToken.Line)
 					return nil
 				}
 				p.nextToken()
@@ -653,8 +666,7 @@ func (p *Parser) parseFloatLiteral() ast.Expression {
 
 	val, err := strconv.ParseFloat(p.curToken.Literal, 64)
 	if err != nil {
-		msg := fmt.Sprintf("Could not parse %q as float. Line %d", p.curToken.Literal, p.curToken.Line)
-		p.errors = append(p.errors, msg)
+		p.newError(p.curToken.Line, "Could not parse %q as float. Line %d", p.curToken.Literal, p.curToken.Line)
 		return nil
 	}
 
@@ -669,8 +681,7 @@ func (p *Parser) parseIntegerLiteral() ast.Expression {
 
 	val, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
 	if err != nil {
-		msg := fmt.Sprintf("Could not parse %q as integer. Line %d", p.curToken.Literal, p.curToken.Line)
-		p.errors = append(p.errors, msg)
+		p.newError(p.curToken.Line, "Could not parse %q as integer. Line %d", p.curToken.Literal, p.curToken.Line)
 		return nil
 	}
 
@@ -689,13 +700,21 @@ func (p *Parser) registerPrefix(TokenType token.TokenType, fn prefixParseFn) {
 func (p *Parser) registerInfix(TokenType token.TokenType, fn infixParseFn) {
 	p.infixParseFns[TokenType] = fn
 }
+
 func (p *Parser) Errors() []string {
+	errs := []string{}
+	for _, e := range p.errors {
+		errs = append(errs, e.Message)
+	}
+	return errs
+}
+
+func (p *Parser) ParserErrors() []ParserError {
 	return p.errors
 }
 
 func (p *Parser) peekError(t token.TokenType) {
-	msg := fmt.Sprintf("expected next token to be ` %s `  got %s instead. Line %d", t, p.peekToken.Type, p.peekToken.Line)
-	p.errors = append(p.errors, msg)
+	p.newError(p.peekToken.Line, "expected next token to be ` %s `  got %s instead. Line %d", t, p.peekToken.Type, p.peekToken.Line)
 }
 
 func (p *Parser) nextToken() {
@@ -709,12 +728,12 @@ func (p *Parser) ParseProgram() *ast.Program {
 
 	for !p.curTokenIs(token.EOF) {
 		stmt := p.parseStatement()
-		if !p.importEnds {
-			if _, ok := stmt.(*ast.ImportStatement); !ok {
-				p.importEnds = true
-			}
-		}
 		if stmt != nil {
+			if !p.importEnds {
+				if _, ok := stmt.(*ast.ImportStatement); !ok {
+					p.importEnds = true
+				}
+			}
 			program.Statements = append(program.Statements, stmt)
 		}
 		p.nextToken()
@@ -812,7 +831,7 @@ func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 }
 
 func (p *Parser) noPrefixParseFnError(t token.TokenType) {
-	p.errors = append(p.errors, fmt.Sprintf("No prefix parse function for %s found. Line %d", t, p.curToken.Line))
+	p.newError(p.curToken.Line, "No prefix parse function for %s found. Line %d", t, p.curToken.Line)
 }
 func (p *Parser) parseExpression(precedence int) ast.Expression {
 	// defer untrace(trace("parseExpression"))
@@ -875,13 +894,14 @@ func (p *Parser) parseLetStatement() *ast.LetStatement {
 	} else if arr, ok := left.(*ast.ArrayLiteral); ok {
 		stmt.Left = arr
 	} else if left != nil {
-		p.errors = append(p.errors, fmt.Sprintf("Cannot use type %s on left side of let statement - line=%d", left.String(), left.Line()))
+		p.newError(left.Line(), "Cannot use type %s on left side of let statement - line=%d", left.String(), left.Line())
 		return nil
 	} else {
-		p.errors = append(p.errors, fmt.Sprintf("Cannot use that type on left side of let statement - line=%d", p.curToken.Line))
+		p.newError(p.curToken.Line, "Cannot use that type on left side of let statement - line=%d", p.curToken.Line)
 	}
 
 	if !p.expectPeek(token.ASSIGN) {
+		p.nextToken()
 		return nil
 	}
 

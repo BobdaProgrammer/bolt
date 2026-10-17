@@ -46,6 +46,7 @@ func Start() {
 
 		if len(p.Errors()) != 0 {
 			printParserErrors(rl, p.Errors())
+			fmt.Println(len(program.Statements))
 			continue
 		}
 
@@ -97,6 +98,18 @@ func expressionStatementAST(indent int, out io.Writer, es *ast.ExpressionStateme
 		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Body:"))
 		indent++
 		createAST(indent, out, fn.Body.Statements)
+		indent -= 3
+	} else if fa, ok := es.Expression.(*ast.FieldAccess); ok {
+		indent++
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), fmt.Sprintf("%T", fa)))
+		indent++
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Left:"))
+		indent++
+		expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: fa.Left})
+		indent--
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Right:"))
+		indent++
+		expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: fa.Right})
 		indent -= 3
 	} else if f, ok := es.Expression.(*ast.IfExpression); ok {
 		indent++

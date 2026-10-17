@@ -1,0 +1,10 @@
+
+pub let a = fn(){
+    y()
+}
+let z = 5
+pub let y = fn(){
+    log("hello")
+}
+a()
+

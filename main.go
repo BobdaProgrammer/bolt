@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/user"
+
 	"github.com/BobdaProgrammer/bolt/evaluator"
 	"github.com/BobdaProgrammer/bolt/formatter"
 	"github.com/BobdaProgrammer/bolt/lexer"
 	"github.com/BobdaProgrammer/bolt/object"
 	"github.com/BobdaProgrammer/bolt/parser"
 	"github.com/BobdaProgrammer/bolt/repl"
-	"os"
-	"os/user"
 )
 
 func main() {
