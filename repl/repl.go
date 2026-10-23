@@ -147,6 +147,34 @@ func expressionStatementAST(indent int, out io.Writer, es *ast.ExpressionStateme
 			indent--
 		}
 		indent -= 2
+	} else if ie, ok := es.Expression.(*ast.IndexExpression); ok {
+		indent++
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), fmt.Sprintf("%T", ie)))
+		indent++
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Left:"))
+		indent++
+		expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: ie.Left})
+		indent--
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Index:"))
+		indent++
+		expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: ie.Index})
+		indent -= 3
+	} else if iae, ok := es.Expression.(*ast.IndexAssignExpression); ok {
+		indent++
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), fmt.Sprintf("%T", iae)))
+		indent++
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Left:"))
+		indent++
+		expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: iae.Left})
+		indent--
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Index:"))
+		indent++
+		expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: iae.Index})
+		indent--
+		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), "Value"))
+		indent++
+		expressionStatementAST(indent, out, &ast.ExpressionStatement{Expression: iae.Value})
+		indent -= 3
 	} else if pe, ok := es.Expression.(*ast.PrefixExpression); ok {
 		indent++
 		fmt.Fprintf(out, "%+v\n", fmt.Sprint(strings.Repeat("    ", indent), fmt.Sprintf("%T", pe)))

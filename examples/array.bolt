@@ -1,25 +1,25 @@
 import "examples/functions.bolt"
-
+import "fs"
+fs.open()
 log(functions.y)
-
+let x = 5
 struct m {
     abs,
     another,
     jeff
 }
-
+let x = 5
 struct a {
     bob
 }
-
-let math = new m{abs:new a{bob:fn(x){
+pub let math = new m{abs:new a{bob:fn(x){
     let another = new m{abs: 12}
     another.abs + 20
     return x
 }}, another: new m{abs: new a{bob:12}}, jeff: [1,2,3]}
 let ne = math
-let arr = [1,2,3,4]
 
+let arr = [1,2,3,4]
 let insert = fn(arr, i, val){
     if i<0 || i >= len(arr){
         return "bad index"
@@ -28,7 +28,10 @@ let insert = fn(arr, i, val){
     return newArr
 }
 
-math.jeff[2]
+let file = fs.filepath
+file.ext()
+
+
 math.abs.bob(12)
 
 log(insert(arr, 1, "bob"))

@@ -3,6 +3,8 @@ package std
 import (
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/BobdaProgrammer/bolt/ast"
@@ -12,6 +14,33 @@ import (
 
 //go:embed *.bolt net/*.bolt
 var files embed.FS
+
+func ExtractFile(name string) (string, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+
+	destDir := filepath.Join(cacheDir, "bolt", "stdlib")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return "", err
+	}
+	name = packages[name]
+	// Only allow a filename, not arbitrary paths.
+	name = filepath.Base(name)
+
+	data, err := files.ReadFile(name)
+	if err != nil {
+		return "", err
+	}
+
+	dest := filepath.Join(destDir, name)
+	if err := os.WriteFile(dest, data, 0644); err != nil {
+		return "", err
+	}
+
+	return dest, nil
+}
 
 var packages map[string]string = map[string]string{
 	"math":     "math.bolt",

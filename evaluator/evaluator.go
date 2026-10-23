@@ -492,14 +492,35 @@ func evalFieldAccessAssignment(left object.Object, right ast.Expression, value o
 }
 
 func evalFieldAccess(left object.Object, right ast.Expression, env *object.Environment) object.Object {
+	if left == nil || right == nil {
+		return newError("Cannot use field access on non existing values in field access %d", right.Line())
+	}
 	switch left := left.(type) {
 	case *object.StructInstance:
 		if r, ok := right.(*ast.Identifier); ok {
 			value, ok := left.Fields[r.Value]
 			if !ok {
-				value, ok = left.StType.Methods[r.Value]
-				if !ok {
+				if left.StType == nil {
 					return newError("Struct instance Has no field %s - line=%d", right.String(), right.Line())
+				}
+
+				found := false
+				for _, field := range left.StType.Fields {
+					if field.Value == r.Value {
+						found = true
+						value = NULL
+					}
+				}
+
+				if !found {
+					if left.StType.Methods == nil {
+						return newError("Struct instance Has no field %s - line=%d", right.String(), right.Line())
+					}
+
+					value, ok = left.StType.Methods[r.Value]
+					if !ok {
+						return newError("Struct instance Has no field %s - line=%d", right.String(), right.Line())
+					}
 				}
 			}
 			return value
@@ -541,7 +562,11 @@ func evalFieldAccess(left object.Object, right ast.Expression, env *object.Envir
 			}
 			return evalIndexAssignExpression(left, index, val, right.Line())
 		} else if r, ok := right.(*ast.FieldAccess); ok {
-			return evalFieldAccess(left.Fields[r.Left.String()], r.Right, env)
+			if val, ok := left.Fields[r.Left.String()]; ok {
+				return evalFieldAccess(val, r.Right, env)
+			} else {
+				return newError("Cannot use: '%s' in field access since it doesn't exist in struct instance - line=%d", r.Left.String(), r.Right.Line())
+			}
 		} else {
 			return newError("Cannot use non identifier to access struct field. Got=%s - line=%d", right, right.Line())
 		}

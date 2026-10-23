@@ -1,0 +1,11 @@
+import "examples/importtest.bolt"
+import "examples/array.bolt"
+
+let x = fn(){}
+let x = [1,2,3]
+array.math.abs
+importtest.helo
+importtest.goodbye
+importtest.testing.Testat
+importtest.testing.one
+

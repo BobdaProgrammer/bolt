@@ -1,0 +1,16 @@
+struct test {
+    one,
+    two,
+    three
+}
+
+pub let [helo, goodbye] = ...[1,2]
+
+pub let testing = new test{one: 2}
+
+let test.Testat = fn(){
+    return "Tested!"
+}
+
+
+testing.Testat()

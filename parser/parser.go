@@ -110,10 +110,10 @@ func (p *Parser) parseSwitchExpression() ast.Expression {
 			return nil
 		}
 	}
-	cases := []ast.SwitchCase{}
+	cases := []*ast.SwitchCase{}
 	p.nextToken()
 	for p.curTokenIs(token.CASE) {
-		cas := ast.SwitchCase{Token: p.curToken, LineNum: p.curToken.Line}
+		cas := &ast.SwitchCase{Token: p.curToken, LineNum: p.curToken.Line}
 		if p.peekTokenIs(token.COLON) {
 			p.newError(p.curToken.Line, "Case in switch statement must have a value to check. cannot use: `case:` - line=%d", p.curToken.Line)
 			return nil
@@ -831,7 +831,7 @@ func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 }
 
 func (p *Parser) noPrefixParseFnError(t token.TokenType) {
-	p.newError(p.curToken.Line, "No prefix parse function for %s found. Line %d", t, p.curToken.Line)
+	p.newError(p.curToken.Line, "Unexpected: %s found. Line %d", t, p.curToken.Line)
 }
 func (p *Parser) parseExpression(precedence int) ast.Expression {
 	// defer untrace(trace("parseExpression"))

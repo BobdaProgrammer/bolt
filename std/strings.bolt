@@ -194,11 +194,11 @@ pub let trimWhitespace = fn(s) {
 }
 
 pub let trimLeftWhitespace = fn(s) {
-    return trimLeftfn(s, isWhitespace)
+    return trimLeftFn(s, isWhitespace)
 }
 
 pub let trimRightWhitespace = fn(s) {
-    return trimRightfn(s, isWhitespace)
+    return trimRightFn(s, isWhitespace)
 }
 
 pub let split = fn(str, sep){
