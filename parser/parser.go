@@ -2,10 +2,11 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/BobdaProgrammer/bolt/ast"
 	"github.com/BobdaProgrammer/bolt/lexer"
 	"github.com/BobdaProgrammer/bolt/token"
-	"strconv"
 )
 
 type (
@@ -191,9 +192,18 @@ func (p *Parser) parseAssignment(left ast.Expression) ast.Expression {
 
 func (p *Parser) parseStructTypeConversion(left ast.Expression) ast.Expression {
 	structconversion := &ast.StructTypeConversion{Token: p.curToken, LineNum: p.curToken.Line}
-	structconversion.Left = left.(*ast.Identifier)
+	if id, ok := left.(*ast.Identifier); ok {
+		structconversion.Left = id
+	} else if fa, ok := left.(*ast.FieldAccess); ok {
+		structconversion.Left = fa
+	} else if si, ok := left.(*ast.StructInstantiation); ok {
+		structconversion.Left = si
+	} else {
+		p.newError(left.Line(), "Cannot use %s on left side of struct conversion - line = %d", left.String(), left.Line())
+		return nil
+	}
 	p.nextToken()
-	structconversion.StType = p.parseIdentifier().(*ast.Identifier)
+	structconversion.StType = p.parseExpression(LOWEST) //p.parseIdentifier().(*ast.Identifier)
 	return structconversion
 }
 
@@ -245,7 +255,7 @@ func (p *Parser) parseStructInstantiation() ast.Expression {
 		return nil
 	}
 	sti := &ast.StructInstantiation{Token: p.curToken, LineNum: p.curToken.Line, Left: left}
-	fields := map[string]ast.Expression{}
+	fields := map[*ast.Identifier]ast.Expression{}
 	if p.peekTokenIs(token.RBRACE) {
 		p.nextToken()
 		sti.Fields = fields
@@ -260,7 +270,7 @@ func (p *Parser) parseStructInstantiation() ast.Expression {
 		}
 		p.nextToken()
 		val := p.parseExpression(LOWEST)
-		fields[ident.Value] = val
+		fields[ident] = val
 		if p.peekTokenIs(token.RBRACE) {
 			p.nextToken()
 			break

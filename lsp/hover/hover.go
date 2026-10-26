@@ -4,20 +4,24 @@ import (
 	"strings"
 
 	"github.com/BobdaProgrammer/bolt/ast"
+	"github.com/BobdaProgrammer/bolt/lexer"
 	"github.com/BobdaProgrammer/bolt/lsp/analyzer"
 	"github.com/BobdaProgrammer/bolt/lsp/logging"
 )
 
-func Documentation(n ast.Node, init *analyzer.Initialised, letIdent string, scope *analyzer.Scope) string {
+func Documentation(n ast.Node, init *analyzer.Initialised, letIdent string, scope *analyzer.Scope, comments map[int]lexer.Comment) string {
 	doc := ""
 	switch n := n.(type) {
 	case *ast.FunctionLiteral:
-		doc = "Type: FUNCTION\n\nfn("
+		doc = "Type: FUNCTION\n\n```bolt\n" + letIdent + " = fn("
 		params := []string{}
 		for _, param := range n.Parameters {
 			params = append(params, param.Value)
 		}
-		doc += strings.Join(params, ", ") + ")"
+		doc += strings.Join(params, ", ") + ")\n```"
+		if comment, ok := comments[init.Line-1]; ok {
+			doc += "\n" + comment.Message
+		}
 	case *ast.StructInstantiation:
 		doc = "Type: STRUCT_INSTANCE\nStruct Type: "
 		doc += "`" + n.Left.String() + "`\n\n"
@@ -25,11 +29,11 @@ func Documentation(n ast.Node, init *analyzer.Initialised, letIdent string, scop
 		codestr := letIdent + " = new " + n.Left.String() + "{"
 		i := 0
 		for name, val := range n.Fields {
-			codestr += name + ": ..."
+			codestr += name.Value + ": ..."
 			if i != len(n.Fields)-1 {
 				codestr += ", "
 			}
-			fields += "   - `" + name + "`"
+			fields += "   - `" + name.Value + "`"
 			if analyzer.GetInitType(val, scope) != analyzer.UNKNOWN {
 				fields += ": " + analyzer.InitTypeToString[analyzer.GetInitType(val, scope)] + "\n"
 			} else {
@@ -72,7 +76,11 @@ func Documentation(n ast.Node, init *analyzer.Initialised, letIdent string, scop
 		}
 	structTypeEnd:
 		logging.Logger.Println("Hover struct instance: ", doc)
-
+	case *ast.StructType:
+		doc = "Type: STRUCT\n\n```bolt\n" + n.String() + "\n```"
+		if comment, ok := comments[init.Line-1]; ok {
+			doc += "\n" + comment.Message
+		}
 	}
 
 	return doc

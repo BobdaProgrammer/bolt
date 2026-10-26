@@ -2,13 +2,14 @@ package utils
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/BobdaProgrammer/bolt/ast"
 	"github.com/BobdaProgrammer/bolt/lexer"
 	"github.com/BobdaProgrammer/bolt/object"
 	"github.com/BobdaProgrammer/bolt/parser"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 func FileExists(path string) bool {
@@ -24,18 +25,17 @@ func ReadFile(path string) string {
 	return string(data)
 }
 
-func ProcessModule(file string, isStd bool) (*ast.Program, *object.Module) {
+func ProcessModule(file string, isStd bool) (*lexer.Lexer, *ast.Program, *object.Module) {
 	l := lexer.New(file)
 	p := parser.New(l)
 	program := p.ParseProgram()
-
 	if len(p.Errors()) != 0 {
 		printParserErrors(p.Errors())
-		return nil, &object.Module{}
+		return nil, nil, &object.Module{}
 	}
 
 	mod := object.CreateNewModule(isStd)
-	return program, mod
+	return l, program, mod
 }
 
 func FileName(path string) string {

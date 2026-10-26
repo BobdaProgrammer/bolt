@@ -13,4 +13,4 @@ let test.Testat = fn(){
 }
 
 
-testing.Testat()
+log(testing.Testat())

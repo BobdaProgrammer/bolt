@@ -1,3 +1,8 @@
+pub struct func{
+    jeff,
+    name,
+    val
+}
 
 pub let a = fn(){
     y()

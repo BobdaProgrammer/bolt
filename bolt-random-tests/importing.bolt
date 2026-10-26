@@ -4,6 +4,7 @@ import "examples/array.bolt"
 let x = fn(){}
 let x = [1,2,3]
 array.math.abs
+array.ne.read()
 importtest.helo
 importtest.goodbye
 importtest.testing.Testat

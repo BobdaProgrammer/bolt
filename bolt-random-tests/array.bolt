@@ -1,6 +1,8 @@
+// hello
 import "examples/functions.bolt"
 import "fs"
-fs.open()
+
+// hello
 log(functions.y)
 let x = 5
 struct m {
@@ -10,16 +12,21 @@ struct m {
 }
 let x = 5
 struct a {
-    bob
+    jeff
 }
-pub let math = new m{abs:new a{bob:fn(x){
-    let another = new m{abs: 12}
-    another.abs + 20
-    return x
-}}, another: new m{abs: new a{bob:12}}, jeff: [1,2,3]}
-let ne = math
 
+let m.read = fn(){
+
+}
+
+// hello
+pub let math = new m{abs:new a{jeff:fn(x){
+    return x
+}}, another: new m{abs: new a{jeff:12}}, jeff: [1,2,3]}
+pub let ne = math.abs as functions.func
 let arr = [1,2,3,4]
+
+// insert will insert a value at a specfic location in an array
 let insert = fn(arr, i, val){
     if i<0 || i >= len(arr){
         return "bad index"
@@ -29,9 +36,9 @@ let insert = fn(arr, i, val){
 }
 
 let file = fs.filepath
-file.ext()
+file.ext("hi")
 
-
-math.abs.bob(12)
+math.abs
+math.abs.jeff(12)
 
 log(insert(arr, 1, "bob"))

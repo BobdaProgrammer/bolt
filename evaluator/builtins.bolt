@@ -1,0 +1,42 @@
+// NOTE: this file contains the function signatures for builtins and not the actual builtin code which is written in golang
+
+// len returns the length of a string, array or hash as an integer
+pub let len = fn(x){}
+
+// push takes in an array and an element and returns a new array with the element appended to the end of the array
+pub let push = fn(arr, element){}
+
+// delete takes in an array or hash as well as an element then will:
+//      1. If hash it will delete a hash pair that corrosponds with the element. The element must be the key, not the value
+//      2. If array it will delete the element in the array with the value of the element give as an argument
+pub let delete = fn(x, element){}
+
+// panic will print a user error and then exit. Can give multiple arguments
+pub let panic = fn(arg){}
+
+// log will print whatever arguments are given to it to stdout. Can give multiple arguments
+pub let log = fn(arg){}
+
+// input will print the user prompt and then wait the user to write their answer to stdin and press enter, then return what the user has typed (excluding the "\n")
+pub let input = fn(prompt){}
+
+// keys returns an array of the keys in the has given
+pub let keys = fn(hash){}
+
+// typeof returns the type of the argument given, returns any of "INT", "FLOAT", "BOOLEAN", "NULL", "RETURN", "ERROR", "FUNCTION", "STRING", "ARRAY", "HASH", "BREAK", "STRUCT", "SPREAD" or the name of the struct type if it is a struct instance. Worst case it returns "UNKNOWN" although this should never happen
+pub let typeof = fn(el){}
+
+// string returns a string of whatever is given, although not everything can be turned into a string. Works with: int, float, bool, string, array and function
+pub let string = fn(el){}
+
+// int returns the integer conversion of whatever is given. Works with string (can return null), float, bool, int
+pub let int = fn(el){}
+
+// float returns the float conversion of whatever is given. Works with string (can return null), float, bool and int
+pub let float = fn(el){}
+
+// copy returns a new copy of whatever is given. Use it to create seperately referenced: strings, arrays, hashes, struct instances. Otherwise it will just return the value given to it without copying since any other values do not need copying
+pub let copy = fn(el){}
+
+// error returns a special object type of error with the error value of whatever string argument is given
+pub let error = fn(str){}

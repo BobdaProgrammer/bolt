@@ -117,7 +117,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		path, _ := os.Stat(node.Value)
 		modulename := utils.FileName(path.Name())
 		file := utils.ReadFile(node.Value)
-		program, module := utils.ProcessModule(file, false)
+		_, program, module := utils.ProcessModule(file, false)
 		if program == nil {
 			return newError("Import file had errors - line=%d", node.Line())
 		}
@@ -594,14 +594,14 @@ func evalStructInstantiation(left object.Object, node *ast.StructInstantiation, 
 
 	st := &object.StructInstance{Fields: map[string]object.Object{}, StType: l}
 	for f, val := range node.Fields {
-		if _, ok := fields[f]; !ok {
+		if _, ok := fields[f.Value]; !ok {
 			return newError("Struct type %s has no field %s - line=%d", l.Name.Value, f, node.Line())
 		}
 		value := Eval(val, env)
 		if isError(value) {
 			return value
 		}
-		st.Fields[f] = value
+		st.Fields[f.Value] = value
 	}
 	return st
 }

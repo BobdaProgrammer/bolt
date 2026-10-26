@@ -117,5 +117,6 @@ func LoadStdPkg(name string) (*ast.Program, *object.Module) {
 		panic(err)
 	}
 
-	return utils.ProcessModule(string(data), true)
+	_, p, m := utils.ProcessModule(string(data), true)
+	return p, m
 }

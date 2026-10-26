@@ -2,18 +2,69 @@ package evaluator
 
 import (
 	"bufio"
+	"embed"
 	"fmt"
-	"github.com/BobdaProgrammer/bolt/object"
-	"github.com/BobdaProgrammer/bolt/utils"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/BobdaProgrammer/bolt/object"
+	"github.com/BobdaProgrammer/bolt/utils"
 )
 
 var (
 	lineNum int
 )
+
+//go:embed builtins.bolt
+var files embed.FS
+
+// Better way maybe by finding actual file and lines
+type Position struct {
+	L, C int
+}
+
+var BuiltinPositions = map[string]Position{
+	"len":     {L: 119, C: 2},
+	"push":    {L: 136, C: 2},
+	"delete:": {L: 160, C: 2},
+	"panic":   {L: 191, C: 2},
+	"log":     {L: 199, C: 2},
+	"input":   {L: 204, C: 2},
+	"keys":    {L: 229, C: 2},
+	"typeof":  {L: 245, C: 2},
+	"string":  {L: 285, C: 2},
+	"int":     {L: 309, C: 2},
+	"float":   {L: 341, C: 2},
+	"copy":    {L: 369, C: 2},
+	"error":   {L: 372, C: 2},
+}
+
+func ExtractBuiltins() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+
+	destDir := filepath.Join(cacheDir, "bolt", "builtins")
+	dest := filepath.Join(destDir, "builtins.bolt")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return dest
+	}
+
+	data, err := files.ReadFile("builtins.bolt")
+	if err != nil {
+		return dest
+	}
+
+	if err := os.WriteFile(dest, data, 0644); err != nil {
+		return dest
+	}
+
+	return dest
+}
 
 func SetBuiltinLineNum(l int) {
 	lineNum = l
@@ -166,7 +217,7 @@ var builtins = map[string]*object.Builtin{
 			reader := bufio.NewReader(os.Stdin)
 			text, err := reader.ReadString('\n')
 			if err != nil {
-				return newError("failed to read input: %s", err)
+				return newError("failed to read input: %s - line=%d", err, lineNum)
 			}
 
 			text = strings.TrimSuffix(text, "\n")
@@ -180,7 +231,10 @@ var builtins = map[string]*object.Builtin{
 			if len(args) != 1 {
 				return wna(1, len(args), "keys(")
 			}
-			dict := args[0].(*object.Hash)
+			dict, ok := args[0].(*object.Hash)
+			if !ok {
+				return newError("Cannot use %s as hash - line=%d", args[0], lineNum)
+			}
 			arr := []object.Object{}
 			for _, val := range dict.Pairs {
 				arr = append(arr, val.Key)

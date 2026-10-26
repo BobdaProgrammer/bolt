@@ -1,12 +1,19 @@
 package lexer
 
 import (
-	"github.com/BobdaProgrammer/bolt/token"
 	"strings"
+
+	"github.com/BobdaProgrammer/bolt/token"
 )
+
+type Comment struct {
+	StartLine, EndLine, StartCol int
+	Message                      string
+}
 
 type Lexer struct {
 	input        string
+	comments     []Comment
 	position     int
 	readPosition int
 	ch           byte
@@ -14,11 +21,16 @@ type Lexer struct {
 	column       int
 }
 
+func (l *Lexer) Comments() []Comment {
+	return l.comments
+}
+
 func New(input string) *Lexer {
 	l := &Lexer{
-		input:  input,
-		line:   1,
-		column: -1,
+		input:    input,
+		line:     1,
+		column:   -1,
+		comments: []Comment{},
 	}
 	l.readChar()
 	return l
@@ -37,10 +49,17 @@ func (l *Lexer) readChar() {
 }
 
 func (l *Lexer) NextToken() token.Token {
-
 	var tok token.Token
+	comment := Comment{StartLine: -1, StartCol: -1, EndLine: -1, Message: ""}
+	wasComment := false
+	letterOrDigit := false
 Outer:
-	l.skipWhitespace()
+	wasNewline := l.skipWhitespace()
+	// if there was a whitespace between two comments then seperate them
+	if wasNewline && wasComment {
+		l.comments = append(l.comments, comment)
+		comment = Comment{StartLine: -1, StartCol: -1, EndLine: -1, Message: ""}
+	}
 
 	switch l.ch {
 	case '%':
@@ -130,7 +149,8 @@ Outer:
 		tok.Column = l.column
 	case '/':
 		if l.peekChar() == '/' {
-			l.skipComment()
+			l.skipComment(&comment)
+			wasComment = true
 			goto Outer
 		} else if l.peekChar() == '=' {
 			ch := l.ch
@@ -190,7 +210,7 @@ Outer:
 			tok.Type = token.LookupIdent(tok.Literal)
 			tok.Line = l.line
 			tok.Column = l.column
-			return tok
+			letterOrDigit = true
 		} else if isDigit(l.ch) {
 			tok.Type = token.INT
 			tok.Line = l.line
@@ -199,13 +219,19 @@ Outer:
 			if strings.Contains(tok.Literal, ".") {
 				tok.Type = token.FLOAT
 			}
-			return tok
+			letterOrDigit = true
 		} else {
 			tok = l.newToken(token.ILLEGAL, l.ch)
 		}
 	}
 
-	l.readChar()
+	if wasComment {
+		l.comments = append(l.comments, comment)
+	}
+
+	if !letterOrDigit {
+		l.readChar()
+	}
 	return tok
 
 }
@@ -269,13 +295,36 @@ func isDigit(ch byte) bool {
 	return '0' <= ch && ch <= '9'
 }
 
-func (l *Lexer) skipComment() {
+// skipComment will get the data of a comment and add it on to previous comments if there is previous (comment block) otherwise it will create a new comment
+func (l *Lexer) skipComment(comment *Comment) {
+	if comment.StartLine == -1 {
+		comment.StartLine = l.line
+	}
+	if comment.StartCol == -1 {
+		comment.StartCol = l.column
+	}
+	message := ""
+	if comment.Message != "" {
+		message = comment.Message + "\n"
+	}
+	// Skip the second /
+	l.readChar()
 	for l.ch != '\n' && l.ch != 0 {
 		l.readChar()
+		if l.ch != '\n' && l.ch != 0 {
+			message += string(l.ch)
+		}
 	}
+	message = strings.Trim(message, " ")
+	comment.EndLine = l.line
+	comment.Message = message
 }
 
-func (l *Lexer) skipWhitespace() {
+func (l *Lexer) skipWhitespace() bool {
+	res := false
+	if l.ch == '\n' {
+		res = true
+	}
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
 		if l.ch == '\n' {
 			l.line++
@@ -283,6 +332,7 @@ func (l *Lexer) skipWhitespace() {
 		}
 		l.readChar()
 	}
+	return res
 }
 
 func (l *Lexer) peekChar() byte {

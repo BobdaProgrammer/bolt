@@ -415,9 +415,10 @@ func (h *Handler) Definition(ctx context.Context, params *lsp.DefinitionParams) 
 
 		logging.Logger.Println("Looking for ident with Line:", params.Position.Line, "Character:", params.Position.Character)
 		for _, LocInit := range identlines.Idents {
-			logging.Logger.Println(LocInit.Pos.Line-1, LocInit.Pos.StartColumn-1, LocInit.Pos.EndColumn-1)
+			logging.Logger.Println(LocInit.Name+": - Line:", LocInit.Pos.Line-1, "- Columns:", LocInit.Pos.StartColumn-1, LocInit.Pos.EndColumn-1, "- Position: ", LocInit.Init.Line-1, LocInit.Init.ImportFile)
 			if params.Position.Line == LocInit.Pos.Line-1 && params.Position.Character >= LocInit.Pos.StartColumn-1 && params.Position.Character <= LocInit.Pos.EndColumn-1 {
 				uri := params.TextDocument.URI
+				logging.Logger.Println("Definition import file", LocInit.Init.ImportFile)
 				if LocInit.Init.ImportFile != "" {
 					uri = lsp.DocumentURI("file://" + LocInit.Init.ImportFile)
 				}
@@ -518,24 +519,35 @@ func (h *Handler) DidSave(ctx context.Context, params *lsp.DidSaveTextDocumentPa
 }
 
 func (h *Handler) Hover(_ context.Context, params *lsp.HoverParams) (*lsp.Hover, error) {
+	comments := analyzer.DocToComments[params.TextDocument.URI]
 	identlines, ok := analyzer.DocToIdentLines[params.TextDocument.URI]
 	hov := ""
 	if ok {
+		logging.Logger.Println("Getting ident in hover for", params.Position)
 		for _, LocInit := range identlines.Idents {
-			logging.Logger.Println(LocInit.Pos.Line-1, LocInit.Pos.StartColumn-1, LocInit.Pos.EndColumn-1)
+			logging.Logger.Println(LocInit.Pos.Line-1, LocInit.Pos.StartColumn-1, LocInit.Pos.EndColumn-1, LocInit.Name)
 			if params.Position.Line == LocInit.Pos.Line-1 && params.Position.Character >= LocInit.Pos.StartColumn-1 && params.Position.Character <= LocInit.Pos.EndColumn-1 {
+				logging.Logger.Println("Got ident in hover", LocInit)
 				if LocInit.Init.Kind != analyzer.UNKNOWN {
 					hov += "Type: " + analyzer.InitTypeToString[LocInit.Init.Kind] + "\n"
 				}
 				if LocInit.Init.NodeCopy != nil {
-					logging.Logger.Println(hover.Documentation(LocInit.Init.NodeCopy, LocInit.Init, LocInit.Name, LocInit.Scope))
-					if doc := hover.Documentation(LocInit.Init.NodeCopy, LocInit.Init, LocInit.Name, LocInit.Scope); doc != "" { // TODO: give it letident instead of nil
+					logging.Logger.Println(comments)
+					if LocInit.Init.ImportFile != "" {
+						comments = analyzer.DocToComments[lsp.DocumentURI(LocInit.Init.ImportFile)]
+						logging.Logger.Println(comments)
+					}
+					if doc := hover.Documentation(LocInit.Init.NodeCopy, LocInit.Init, LocInit.Name, LocInit.Scope, comments); doc != "" { // TODO: give it letident instead of nil
 						hov = doc
 					} else {
-						logging.Logger.Println("Documentation node copy: ", LocInit.Init.NodeCopy.String())
-						hov += "```bolt\n" + LocInit.Init.NodeCopy.String() + "\n```"
+						hov += "```bolt\n" + LocInit.Name + " = " + LocInit.Init.NodeCopy.String() + "\n```"
+						logging.Logger.Println("Documentation node copy: ", LocInit.Init.NodeCopy.String(), hov)
+					}
+					if LocInit.Init.ImportFile != "" {
+						comments = analyzer.DocToComments[params.TextDocument.URI]
 					}
 				}
+				break
 			}
 		}
 	}
@@ -557,7 +569,8 @@ func isWithinDir(dir, path string) bool {
 
 func (h *Handler) RunDiagnostics(ctx context.Context, text string, filename string, URI lsp.DocumentURI, changed bool) []lsp.Diagnostic {
 	// Parse the file to get any parser errors
-	p, errs := analyzer.Parse(text)
+	p, errs, comments := analyzer.Parse(text)
+	analyzer.DocToComments[URI] = comments
 	logging.Logger.Println("\n", "Parser errors: ", errs, "\n")
 	if p != nil {
 		// turn the URI to a filepath e.g. file:///home/sam/code/bolt/examples/functions.bolt -> /home/sam/code/bolt/examples/functions.bolt
@@ -597,7 +610,7 @@ func (h *Handler) RunDiagnostics(ctx context.Context, text string, filename stri
 				} else {
 					fpath, _ := os.Stat(path)
 					name = utils.FileName(fpath.Name())
-					program, _ = utils.ProcessModule(text, false)
+					_, program, _ = utils.ProcessModule(text, false)
 				}
 				logging.Logger.Println("Updating module cache for: ", name)
 				if program != nil {

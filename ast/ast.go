@@ -521,7 +521,7 @@ type StructInstantiation struct {
 	LineNum int
 	Token   token.Token
 	Left    Expression
-	Fields  map[string]Expression
+	Fields  map[*Identifier]Expression
 }
 
 func (si *StructInstantiation) ExpressionNode()      {}
@@ -530,7 +530,7 @@ func (si *StructInstantiation) TokenLiteral() string { return si.Token.Literal }
 func (si *StructInstantiation) String() string {
 	fields := []string{}
 	for id, val := range si.Fields {
-		fields = append(fields, id+" : "+val.String())
+		fields = append(fields, id.Value+" : "+val.String())
 	}
 	return si.Left.String() + " { " + strings.Join(fields, ", ") + "}"
 }
@@ -545,7 +545,13 @@ type FieldAccess struct {
 func (fa *FieldAccess) ExpressionNode()      {}
 func (fa *FieldAccess) Line() int            { return fa.LineNum }
 func (fa *FieldAccess) TokenLiteral() string { return fa.Token.Literal }
-func (fa *FieldAccess) String() string       { return fa.Left.String() + "." + fa.Right.String() }
+func (fa *FieldAccess) String() string {
+	if fa.Left != nil && fa.Right != nil {
+		return fa.Left.String() + "." + fa.Right.String()
+	} else {
+		return ""
+	}
+}
 
 type ImportStatement struct {
 	LineNum int
@@ -572,8 +578,8 @@ func (p *PubStatement) String() string       { return "pub " + p.Stmt.String() }
 type StructTypeConversion struct {
 	Token   token.Token
 	LineNum int
-	StType  *Identifier
-	Left    *Identifier
+	StType  Expression
+	Left    Expression
 }
 
 func (st *StructTypeConversion) ExpressionNode()      {}
