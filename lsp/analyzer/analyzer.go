@@ -52,6 +52,7 @@ type DocumentIdentLines struct {
 
 var DocToIdentLines map[lsp.DocumentURI]DocumentIdentLines = map[lsp.DocumentURI]DocumentIdentLines{}
 var DocToComments = map[lsp.DocumentURI]map[int]lexer.Comment{}
+var DocToInits = map[lsp.DocumentURI]map[string]*Initialised{}
 
 var Modulemap map[string]*Module = map[string]*Module{}
 
@@ -376,7 +377,7 @@ func walkStructInstantiations(context Context, si *ast.StructInstantiation, curr
 			if sInst, ok := val.(*ast.StructInstantiation); ok {
 				walkStructInstantiations(context, sInst, curr+"."+name.Value, scope, diags, runWalk, Position{Line: name.Line(), StartColumn: getStartColumn(name.Token), EndColumn: name.Token.Column}, nil)
 			} else {
-				runWalk(val, NIL, Context{letIdent: curr + "." + name.Value, inFor: context.inFor, lastNode: si})
+				runWalk(val, NIL, Context{letIdent: curr + "." + name.Value, inFor: context.inFor, isStd: context.isStd, lastNode: si})
 			}
 		}
 	} else {
@@ -501,7 +502,6 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 	case *ast.LetStatement:
 		var letstr string = ""
 		var letident *ast.Identifier
-		// TODO: check if we need let ident for field access
 		if i, ok := n.Left.(*ast.Identifier); ok {
 			letstr = i.Value
 			letident = i
@@ -556,12 +556,12 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 			}
 		}
 
-		// TODO: deal with saying let x = math where math is a struct instance
-		// TODO: deal with non-pub let statement which is a struct instantiation because that needs to be assigned to privscope so that if there is a pub that uses that variable, we can correctly assign for it
 		if si, ok := n.Value.(*ast.StructInstantiation); ok && letstr != "" {
 			walkStructInstantiationsImport(si, name+"."+letstr, scope, privScope, imp, isPub, Position{Line: n.Left.Line(), StartColumn: getStartColumn(letident.Token), EndColumn: letident.Token.Column})
 		} else if sc, ok := n.Value.(*ast.StructTypeConversion); ok {
-			st, fields := evalStructConversionImport(sc, scope, privScope, name, name+"."+letstr, isPub, imp)
+			st, fields, _ := evalStructConversionImport(sc, scope, privScope, name, name+"."+letstr, isPub, imp)
+
+			logging.Logger.Println("Struct conversion import", st, fields)
 			if st != nil && len(fields) > 0 && letident != nil {
 				sifields := map[*ast.Identifier]ast.Expression{}
 				si := &ast.StructInstantiation{LineNum: n.Left.Line()}
@@ -590,7 +590,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 				si.Left = &ast.Identifier{Value: stType.Name.Value}
 
 				for nam, t := range fields {
-					logging.Logger.Println("Hidden ident", name+"."+letstr+"."+nam.Value)
+					// Hidden init since there is no actual source code location where it is initialised and so we don't want to confuse the hover handler or go to definition handler by having multiple identliens in one place
 					if isPub {
 						scope.vals[name+"."+letstr+"."+nam.Value] = &Initialised{
 							Line:       sc.Line(),
@@ -629,11 +629,21 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 				line = id.Line()
 				scol = getStartColumn(id.Token)
 				ecol = id.Token.Column
-			} else if fa, ok := n.Value.(*ast.FieldAccess); ok && privScope.Exists(name+"."+fa.String()) {
-				line = fa.Line()
-				scol = getStartColumn(fa.Token)
-				ecol = fa.Token.Column
-				idstr = name + "." + fa.String()
+			} else if fa, ok := n.Value.(*ast.FieldAccess); ok {
+				if privScope.Exists(name + "." + fa.String()) {
+					line = fa.Line()
+					scol = getStartColumn(fa.Token)
+					ecol = fa.Token.Column
+					idstr = name + "." + fa.String()
+				}
+				rt := checkSpecialFieldAccessImport(fa, privScope, name)
+				logging.Logger.Println("field access let statement", fa.String(), InitTypeToString[rt])
+				if idstr == "" && rt != UNKNOWN {
+					if isPub {
+						scope.vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
+					}
+					privScope.vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
+				}
 			}
 
 			if idstr != "" {
@@ -675,63 +685,50 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 	}
 }
 
-func evalStructConversionImport(sc *ast.StructTypeConversion, scope *Scope, privScope *Scope, name string, letIdent string, isPub bool, imp string) (*Initialised, map[*ast.Identifier]ast.Expression) {
+func evalStructConversionImport(sc *ast.StructTypeConversion, scope *Scope, privScope *Scope, name string, letIdent string, isPub bool, imp string) (*Initialised, map[*ast.Identifier]ast.Expression, map[string]ast.Expression) {
 	leftStr := ""
 	var left *ast.StructInstantiation = nil
 	if id, ok := sc.Left.(*ast.Identifier); ok {
 		leftStr = name + "." + id.Value
 		left, ok = getStructInstance(privScope, leftStr, &[]LineDiagnostic{}, sc.Line())
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 	} else if fa, ok := sc.Left.(*ast.FieldAccess); ok {
 		leftStr = name + "." + fa.String()
 		left, ok = getStructInstance(privScope, leftStr, &[]LineDiagnostic{}, sc.Line())
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 	} else if si, ok := sc.Left.(*ast.StructInstantiation); ok {
 		left = si
 	} else {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	rightStr := ""
 	var right *ast.StructType = nil
 	var stType *Initialised
 	if id, ok := sc.StType.(*ast.Identifier); ok {
-		rightStr = name + "." + id.Value
+		rightStr = id.Value
 		right, ok = getStructType(privScope, rightStr, &[]LineDiagnostic{}, sc.Line())
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 		stType = privScope.Lookup(rightStr)
 	} else if fa, ok := sc.StType.(*ast.FieldAccess); ok {
 		rightStr = fa.String()
 		right, ok = getStructType(privScope, rightStr, &[]LineDiagnostic{}, sc.Line())
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 		stType = privScope.Lookup(rightStr)
 	} else {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	// if privScope.Exists(leftStr) && privScope.Exists(sc.StType.Value) {
-	// 	stInstance := privScope.Lookup(leftStr)
-	// 	stType := privScope.Lookup(sc.StType.Value)
-	//
-	// 	left, ok := stInstance.NodeCopy.(*ast.StructInstantiation)
-	// 	if !ok {
-	// 		return nil, nil
-	// 	}
-	// 	right, ok := stType.NodeCopy.(*ast.StructType)
-	// 	if !ok {
-	// 		return nil, nil
-	// 	}
-
 	if len(left.Fields) > len(right.Fields) {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	rightnames := map[string]bool{}
@@ -756,17 +753,16 @@ func evalStructConversionImport(sc *ast.StructTypeConversion, scope *Scope, priv
 	}
 
 	newMap := map[*ast.Identifier]ast.Expression{}
+	strMap := map[string]ast.Expression{}
 	for name, val := range left.Fields {
 		if _, ok := rightnames[name.Value]; !ok {
-			return nil, nil
+			return nil, nil, nil
 		} else {
 			newMap[name] = val
+			strMap[name.Value] = val
 		}
 	}
-	return stType, newMap
-	// } else {
-	// 	return nil, nil
-	// }
+	return stType, newMap, strMap
 }
 func getStructType(scope *Scope, str string, diags *[]LineDiagnostic, line int) (*ast.StructType, bool) {
 	if scope.Exists(str) && scope.Lookup(str).Kind == STRUCT && scope.Lookup(str).NodeCopy != nil {
@@ -803,25 +799,25 @@ func getStructInstance(scope *Scope, str string, diags *[]LineDiagnostic, line i
 	}
 }
 
-func evalStructConversion(sc *ast.StructTypeConversion, diags *[]LineDiagnostic, scope *Scope, letIdent string) (*Initialised, map[*ast.Identifier]ast.Expression) {
+func evalStructConversion(sc *ast.StructTypeConversion, diags *[]LineDiagnostic, scope *Scope, letIdent string) (*Initialised, map[*ast.Identifier]ast.Expression, map[string]ast.Expression) {
 	leftStr := ""
 	var left *ast.StructInstantiation = nil
 	if id, ok := sc.Left.(*ast.Identifier); ok {
 		leftStr = id.Value
 		left, ok = getStructInstance(scope, leftStr, diags, sc.Line())
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 	} else if fa, ok := sc.Left.(*ast.FieldAccess); ok {
 		leftStr = fa.String()
 		left, ok = getStructInstance(scope, leftStr, diags, sc.Line())
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 	} else if si, ok := sc.Left.(*ast.StructInstantiation); ok {
 		left = si
 	} else {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	rightStr := ""
@@ -831,38 +827,23 @@ func evalStructConversion(sc *ast.StructTypeConversion, diags *[]LineDiagnostic,
 		rightStr = id.Value
 		right, ok = getStructType(scope, rightStr, diags, sc.Line())
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 		stType = scope.Lookup(rightStr)
 	} else if fa, ok := sc.StType.(*ast.FieldAccess); ok {
 		rightStr = fa.String()
 		right, ok = getStructType(scope, rightStr, diags, sc.Line())
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 		stType = scope.Lookup(rightStr)
 	} else {
-		return nil, nil
+		return nil, nil, nil
 	}
-
-	//if scope.Exists(leftStr) && scope.Exists(sc.StType.Value) {
-	//stInstance := scope.Lookup(leftStr)
-	//stType := scope.Lookup(sc.StType.Value)
-
-	// left, ok := stInstance.NodeCopy.(*ast.StructInstantiation)
-	// if !ok {
-	// 	*diags = append(*diags, LineDiagnostic{Message: "Cannot use " + leftStr + " as struct instance in struct conversion", Line: sc.Line()})
-	// 	return nil, nil
-	// }
-	// right, ok := stType.NodeCopy.(*ast.StructType)
-	// if !ok {
-	// 	*diags = append(*diags, LineDiagnostic{Message: "Cannot use " + sc.StType.String() + " as struct type in struct conversion", Line: sc.Line()})
-	// 	return nil, nil
-	// }
 
 	if len(left.Fields) > len(right.Fields) {
 		*diags = append(*diags, LineDiagnostic{Message: "Cannot convert " + leftStr + " to " + sc.StType.String() + " since " + leftStr + " has more values than" + sc.StType.String(), Line: sc.Line()})
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	rightnames := map[string]bool{}
@@ -878,18 +859,17 @@ func evalStructConversion(sc *ast.StructTypeConversion, diags *[]LineDiagnostic,
 	}
 
 	newMap := map[*ast.Identifier]ast.Expression{}
+	strMap := map[string]ast.Expression{}
 	for name, val := range left.Fields {
 		if _, ok := rightnames[name.Value]; !ok {
 			*diags = append(*diags, LineDiagnostic{Message: "Cannot convert " + leftStr + " to " + sc.StType.String() + " since " + leftStr + " has value " + name.Value + " That is not a value of " + sc.StType.String(), Line: sc.Line()})
-			return nil, nil
+			return nil, nil, nil
 		} else {
 			newMap[name] = val
+			strMap[name.Value] = val
 		}
 	}
-	return stType, newMap
-	//} else {
-	//	return nil, nil
-	//}
+	return stType, newMap, strMap
 }
 
 func getInfixType(val ast.Node, scope *Scope, diags *[]LineDiagnostic) InitType {
@@ -993,13 +973,13 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 	if IsNil(n) {
 		return
 	}
-	// Context on what the variable name is (only used for struct initialisation)
 
 	runWalk := func(node ast.Node, scope *Scope, rt RoleType, ctx ...Context) {
 		if len(ctx) > 0 {
 			walk(node, scope, scopes, dependencies, diags, ctx[0], identLines)
 		} else {
 			newCtx := context
+			newCtx.letIdent = ""
 			newCtx.lastNode = n
 			newCtx.role = rt
 			walk(node, scope, scopes, dependencies, diags, newCtx, identLines)
@@ -1244,11 +1224,9 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 				walkStructInstantiations(context, si, identstr, scope, diags, rWalk, Position{Line: n.Left.Line(), EndColumn: letident.Token.Column, StartColumn: getStartColumn(letident.Token)}, nil)
 			}
 		} else if sc, ok := n.Value.(*ast.StructTypeConversion); ok {
-			logging.Logger.Println("struct conversion", sc.StType, sc.Left)
 			runWalk(sc.StType, scope, STRUCT_TYPE)
 			runWalk(sc.Left, scope, STRUCT_INSTANCE_ROLE)
-			st, fields := evalStructConversion(sc, diags, scope, identstr)
-			logging.Logger.Println("struct conversion", sc.StType, sc.Left)
+			st, fields, _ := evalStructConversion(sc, diags, scope, identstr)
 			if st != nil && len(fields) > 0 {
 				sifields := map[*ast.Identifier]ast.Expression{}
 				si := &ast.StructInstantiation{LineNum: n.Left.Line()}
@@ -1267,6 +1245,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 				si.Left = &ast.Identifier{Value: stType.Name.Value}
 
 				for name, t := range fields {
+					// Hidden init since there is no actual source code location where it is initialised and so we don't want to confuse the hover handler or go to definition handler by having multiple identliens in one place
 					scope.vals[identstr+"."+name.Value] = &Initialised{
 						Line:       sc.Line(),
 						Column:     getStartColumn(sc.Token),
@@ -1281,12 +1260,23 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 			}
 		} else {
 			// Walk the other side of the let statement
-			runWalk(n.Value, scope, ASSIGNING)
+			isFa := false
 			idstr := ""
 			if id, ok := n.Value.(*ast.Identifier); ok && scope.Exists(id.Value) {
 				idstr = id.Value
-			} else if fa, ok := n.Value.(*ast.FieldAccess); ok && scope.Exists(fa.String()) {
-				idstr = fa.String()
+			} else if fa, ok := n.Value.(*ast.FieldAccess); ok {
+				if scope.Exists(fa.String()) {
+					idstr = fa.String()
+				}
+				isFa = true
+				logging.Logger.Println("field access as value of let statement", fa.String())
+				rt := evalFieldAccess(fa, scope, Context{letIdent: identstr, inFor: context.inFor, isStd: context.isStd, lastNode: n}, diags, runWalk)
+				if idstr == "" {
+					scope.vals[identstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
+				}
+			}
+			if !isFa {
+				runWalk(n.Value, scope, ASSIGNING)
 			}
 
 			if idstr != "" {
@@ -1304,7 +1294,6 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 							}
 						}
 					}
-					// TODO: see if it is an imported struct
 					walkStructInstantiations(context, si, identstr, scope, diags, rWalk, Position{Line: n.Left.Line(), EndColumn: letident.Token.Column, StartColumn: getStartColumn(letident.Token)}, t)
 
 				} else {
@@ -1420,7 +1409,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 				}
 			}
 		}
-		runWalk(n.Consequence, newscope, NIL, Context{letIdent: "", inFor: true, lastNode: n})
+		runWalk(n.Consequence, newscope, NIL, Context{letIdent: "", inFor: true, lastNode: n, isStd: context.isStd})
 	case *ast.SwitchExpression:
 		// Walk the switch item then each case
 		runWalk(n.SwitchItem, scope, NIL)
@@ -1480,47 +1469,119 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		}
 		scope.idents = append(scope.idents, i)
 	case *ast.FieldAccess:
-		if IsNil(n.Left) || IsNil(n.Right) {
-			break
-		}
+		evalFieldAccess(n, scope, context, diags, runWalk)
+		// if IsNil(n.Left) || IsNil(n.Right) {
+		// 	break
+		// }
+		//
+		// logging.Logger.Println("Field access", context.letIdent, n.String())
+		//
+		// if i, ok := n.Left.(*ast.Identifier); ok {
+		// 	if scope.Exists(i.Value) {
+		// 		if scope.Lookup(i.Value).Kind == UNKNOWN {
+		// 			break
+		// 		}
+		// 	}
+		// 	// record field access use as identifier
+		// 	i, ok := fieldAccess(n, context, scope, diags, i.Value, func(n ast.Node) { runWalk(n, scope, NIL) }) //Ident{Val: n.String(), Line: n.Line(), UseType: context.role}
+		// 	if context.role == INFIXED {
+		// 		i.NodeCopy = context.lastNode
+		// 	}
+		// 	if ok {
+		// 		scope.idents = append(scope.idents, i)
+		// 	}
+		// } else {
+		// 	runWalk(n.Left, scope, NIL)
+		// 	if sc, ok := n.Left.(*ast.StructTypeConversion); ok {
+		// 		if id, ok := n.Right.(*ast.Identifier); ok {
+		// 			li := ""
+		// 			if context.letIdent != "" {
+		// 				li = context.letIdent
+		// 			}
+		// 			st, _, strfields := evalStructConversion(sc, diags, scope, li)
+		// 			logging.Logger.Println("struct conversion field access", sc.String(), st, strfields, "Identifier")
+		// 			if len(strfields) != 0 && st != nil {
+		// 				_, isfield := strfields[id.Value]
+		// 				_, ismethod := st.Extras[id.Value]
+		// 				if !isfield && !ismethod {
+		// 					*diags = append(*diags, LineDiagnostic{Message: id.Value + " is not a value of STRUCT INSTANCE " + sc.Left.String() + " that has been converted to " + sc.StType.String(), Line: n.Right.Line()})
+		// 				}
+		// 			}
+		// 		} else {
+		// 			*diags = append(*diags, LineDiagnostic{Message: "Cannot use " + n.Right.String() + " on STRUCT INSTANCE", Line: n.Right.Line()})
+		// 		}
+		// 	}
+		// }
+	}
 
-		if i, ok := n.Left.(*ast.Identifier); ok {
-			if scope.Exists(i.Value) {
-				if scope.Lookup(i.Value).Kind == UNKNOWN {
-					break
-				}
-			}
-			// record field access use as identifier
-			i, ok := fieldAccess(n, context, scope, diags, i.Value, func(n ast.Node) { runWalk(n, scope, NIL) }) //Ident{Val: n.String(), Line: n.Line(), UseType: context.role}
-			if context.role == INFIXED {
-				i.NodeCopy = context.lastNode
-			}
-			if ok {
-				scope.idents = append(scope.idents, i)
-			}
-		} else {
-			runWalk(n.Left, scope, NIL)
-			if sc, ok := n.Left.(*ast.StructTypeConversion); ok {
-				if id, ok := n.Right.(*ast.Identifier); ok {
-					li := ""
-					if context.letIdent != "" {
-						li = context.letIdent
+}
+
+func checkSpecialFieldAccessImport(n *ast.FieldAccess, scope *Scope, name string) InitType {
+	if _, ok := n.Left.(*ast.Identifier); ok {
+		return UNKNOWN
+	} else {
+		if sc, ok := n.Left.(*ast.StructTypeConversion); ok {
+			if id, ok := n.Right.(*ast.Identifier); ok {
+				st, _, strfields := evalStructConversionImport(sc, scope, scope, name, "", false, "")
+				logging.Logger.Println("struct conversion field access", sc.String(), st, strfields, "Identifier")
+				if len(strfields) != 0 && st != nil {
+					_, isfield := strfields[id.Value]
+					_, ismethod := st.Extras[id.Value]
+					if ismethod {
+						return FUNCTION
+					} else if isfield {
+						return GetInitType(strfields[id.Value], scope)
 					}
-					st, fields := evalStructConversion(sc, diags, scope, li)
-					if len(fields) != 0 && st != nil {
-						_, isfield := fields[id]
-						_, ismethod := st.Extras[id.Value]
-						if !isfield && !ismethod {
-							*diags = append(*diags, LineDiagnostic{Message: id.Value + " is not a value of STRUCT INSTANCE " + sc.Left.String() + " that has been converted to " + sc.StType.String(), Line: n.Right.Line()})
-						}
-					}
-				} else {
-					*diags = append(*diags, LineDiagnostic{Message: "Cannot use " + n.Right.String() + " on STRUCT INSTANCE", Line: n.Right.Line()})
 				}
 			}
 		}
 	}
+	return UNKNOWN
+}
 
+func evalFieldAccess(n *ast.FieldAccess, scope *Scope, context Context, diags *[]LineDiagnostic, runWalk func(n ast.Node, scope *Scope, rt RoleType, c ...Context)) InitType {
+	if IsNil(n.Left) || IsNil(n.Right) {
+		return UNKNOWN
+	}
+
+	if i, ok := n.Left.(*ast.Identifier); ok {
+		if scope.Exists(i.Value) {
+			if scope.Lookup(i.Value).Kind == UNKNOWN {
+				return UNKNOWN
+			}
+		}
+		// record field access use as identifier
+		i, ok := fieldAccess(n, context, scope, diags, i.Value, func(n ast.Node) { runWalk(n, scope, NIL) }) //Ident{Val: n.String(), Line: n.Line(), UseType: context.role}
+		if context.role == INFIXED {
+			i.NodeCopy = context.lastNode
+		}
+		if ok {
+			scope.idents = append(scope.idents, i)
+		}
+	} else {
+		runWalk(n.Left, scope, NIL)
+		if sc, ok := n.Left.(*ast.StructTypeConversion); ok {
+			if id, ok := n.Right.(*ast.Identifier); ok {
+				st, _, strfields := evalStructConversion(sc, diags, scope, "")
+				logging.Logger.Println("struct conversion field access", sc.String(), st, strfields, "Identifier")
+				if len(strfields) != 0 && st != nil {
+					_, isfield := strfields[id.Value]
+					_, ismethod := st.Extras[id.Value]
+					if !isfield && !ismethod {
+						*diags = append(*diags, LineDiagnostic{Message: id.Value + " is not a value of STRUCT INSTANCE " + sc.Left.String() + " that has been converted to " + sc.StType.String(), Line: n.Right.Line()})
+						return UNKNOWN
+					} else if ismethod {
+						return FUNCTION
+					} else if isfield {
+						return GetInitType(strfields[id.Value], scope)
+					}
+				}
+			} else {
+				*diags = append(*diags, LineDiagnostic{Message: "Cannot use " + n.Right.String() + " on STRUCT INSTANCE", Line: n.Right.Line()})
+			}
+		}
+	}
+	return UNKNOWN
 }
 
 func fieldAccessStr(fa *ast.FieldAccess, curr string) string {
@@ -1741,8 +1802,10 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 
 	extractedBuiltins := false
 	builtinDest := ""
+	DocToInits[uri] = map[string]*Initialised{}
 	for _, scope := range scopes {
 		for letident, init := range scope.vals {
+			DocToInits[uri][letident] = init
 			if init.ImportFile == "" && !init.HiddenInit {
 				identLines = append(identLines, LocationInit{Pos: Position{Line: init.Line, StartColumn: init.Column, EndColumn: init.Column + (len(letident) - 1)}, Init: init, Name: letident, Scope: scope})
 			}

@@ -1,5 +1,5 @@
-import "examples/importtest.bolt"
-import "examples/array.bolt"
+import "bolt-random-tests/importtest.bolt"
+import "bolt-random-tests/array.bolt"
 
 let x = fn(){}
 let x = [1,2,3]

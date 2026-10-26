@@ -173,6 +173,19 @@ func (h *Handler) Completion(
 		items = append(items, item)
 	}
 
+	inits, ok := analyzer.DocToInits[params.TextDocument.URI]
+	if ok {
+		kind := lsp.CompletionItemKindVariable
+		for name := range inits {
+			items = append(items, lsp.CompletionItem{
+				Label:         name,
+				Kind:          &kind,
+				Detail:        name,
+				Documentation: &lsp.MarkupContent{Kind: lsp.Markdown, Value: "Documentation for " + name},
+			})
+		}
+	}
+
 	return &lsp.CompletionList{
 		IsIncomplete: false,
 		Items:        items,

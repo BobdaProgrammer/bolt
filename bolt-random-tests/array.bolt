@@ -1,5 +1,5 @@
 // hello
-import "examples/functions.bolt"
+import "bolt-random-tests/functions.bolt"
 import "fs"
 
 // hello
@@ -23,7 +23,9 @@ let m.read = fn(){
 pub let math = new m{abs:new a{jeff:fn(x){
     return x
 }}, another: new m{abs: new a{jeff:12}}, jeff: [1,2,3]}
-pub let ne = math.abs as functions.func
+
+pub let ne = math.abs as m
+pub let y = (math.abs as m).read
 let arr = [1,2,3,4]
 
 // insert will insert a value at a specfic location in an array
@@ -40,5 +42,4 @@ file.ext("hi")
 
 math.abs
 math.abs.jeff(12)
-
 log(insert(arr, 1, "bob"))
