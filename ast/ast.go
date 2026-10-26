@@ -3,8 +3,40 @@ package ast
 import (
 	"bytes"
 	"github.com/BobdaProgrammer/bolt/token"
+	"reflect"
 	"strings"
 )
+
+func IsNil(v any) bool {
+	if v == nil {
+		return true
+	}
+
+	rv := reflect.ValueOf(v)
+
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Map,
+		reflect.Slice, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
+func SafeString(n Node) (result string, fine bool) {
+	if IsNil(n) {
+		return "<nil>", false
+	}
+
+	defer func() {
+		if recover() != nil {
+			fine = false
+			result = "<invalid>"
+		}
+	}()
+
+	return n.String(), true
+}
 
 type Node interface {
 	TokenLiteral() string

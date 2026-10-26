@@ -46,7 +46,6 @@ func Start() {
 
 		if len(p.Errors()) != 0 {
 			printParserErrors(rl, p.Errors())
-			fmt.Println(len(program.Statements))
 			continue
 		}
 

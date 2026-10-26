@@ -569,7 +569,7 @@ func (h *Handler) Hover(_ context.Context, params *lsp.HoverParams) (*lsp.Hover,
 	}, nil
 }
 
-func isWithinDir(dir, path string) bool {
+func IsWithinDir(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 	if err != nil {
 		return false
@@ -584,7 +584,7 @@ func (h *Handler) RunDiagnostics(ctx context.Context, text string, filename stri
 	// Parse the file to get any parser errors
 	p, errs, comments := analyzer.Parse(text)
 	analyzer.DocToComments[URI] = comments
-	logging.Logger.Println("\n", "Parser errors: ", errs, "\n")
+	logging.Logger.Println("\n", "Parser errors: ", errs)
 	if p != nil {
 		// turn the URI to a filepath e.g. file:///home/sam/code/bolt/examples/functions.bolt -> /home/sam/code/bolt/examples/functions.bolt
 		path := filename
@@ -597,7 +597,7 @@ func (h *Handler) RunDiagnostics(ctx context.Context, text string, filename stri
 		isStd := false
 		if err == nil {
 			destDir := filepath.Join(cacheDir, "bolt", "stdlib")
-			if isWithinDir(destDir, path) {
+			if IsWithinDir(destDir, path) {
 				isStd = true
 			}
 		}
@@ -621,8 +621,10 @@ func (h *Handler) RunDiagnostics(ctx context.Context, text string, filename stri
 				if !strings.HasSuffix(path, ".bolt") && std.IsStandardLib(path) {
 					program, name, _, _, _ = analyzer.GetImport(path, -1)
 				} else {
-					fpath, _ := os.Stat(path)
-					name = utils.FileName(fpath.Name())
+					fpath, err := os.Stat(path)
+					if err == nil {
+						name = utils.FileName(fpath.Name())
+					}
 					_, program, _ = utils.ProcessModule(text, false)
 				}
 				logging.Logger.Println("Updating module cache for: ", name)
@@ -658,7 +660,7 @@ func (h *Handler) RunDiagnostics(ctx context.Context, text string, filename stri
 			}
 		}
 	}
-	logging.Logger.Println("---------\n")
+	logging.Logger.Println("---------")
 
 	return errs
 }
