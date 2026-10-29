@@ -21,6 +21,10 @@ import (
 	"github.com/owenrumney/go-lsp/server"
 )
 
+// Cache the current scope of documents we are in so that if the scope
+// then can't be determined, we can use the cache
+var DocToCurrScope = map[lsp.DocumentURI]*analyzer.Scope{}
+
 type Completion struct {
 	Label         string
 	Kind          lsp.CompletionItemKind
@@ -199,6 +203,13 @@ func (h *Handler) Completion(
 
 	scopes, ok := analyzer.DocToScopes[params.TextDocument.URI]
 	if sc := findCurrScopeForCompletion(params.Position.Line, params.Position.Character, params.TextDocument.URI); sc != nil {
+		DocToCurrScope[params.TextDocument.URI] = sc
+		scopes = []*analyzer.Scope{sc}
+		for sc.Outer != nil {
+			scopes = append(scopes, sc.Outer)
+			sc = sc.Outer
+		}
+	} else if sc, ok := DocToCurrScope[params.TextDocument.URI]; ok && params.Position.Line >= sc.Line-1 {
 		scopes = []*analyzer.Scope{sc}
 		for sc.Outer != nil {
 			scopes = append(scopes, sc.Outer)

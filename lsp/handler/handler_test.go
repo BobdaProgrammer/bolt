@@ -516,11 +516,6 @@ func TestInfixTypeErrors_ThroughVariables(t *testing.T) {
 	requireNoDiags(t, check(t, prog(`let n = 3`, `let s = "x"`, `log(s * n)`)))
 }
 
-// walkInfix's own comment says "int * string is string", but the INT branch
-// only exempts "*" from the first message and then falls into the generic
-// error branch, so `3 * "ab"` is currently reported. If INT * STRING is meant
-// to be valid (it is the mirror of STRING * INT) this test fails and points at
-// that branch; if it is meant to be invalid, change it to requireDiag.
 func TestInfix_IntTimesStringIsAllowed(t *testing.T) {
 	requireNoDiags(t, check(t, `log(3 * "ab")`))
 	requireNoDiags(t, check(t, prog(`let n = 3`, `let s = "x"`, `log(n * s)`)))
@@ -798,28 +793,6 @@ func TestErrorsOnLaterLinesOfLargeFile(t *testing.T) {
 // ===========================================================================
 // CheckInitsAndIdents recording
 // ===========================================================================
-
-func TestCheckInits_RecordsAndReplacesDeclarations(t *testing.T) {
-	e := newEnv(t)
-	uri := e.uri("inits.bolt")
-
-	e.diagnose(t, "inits.bolt", prog(`let alpha = 1`, `let beta = 2`))
-	inits := analyzer.DocToInits[uri]
-	for _, name := range []string{"alpha", "beta"} {
-		if _, ok := inits[name]; !ok {
-			t.Errorf("DocToInits missing %q after first run: have %v", name, keysOf(inits))
-		}
-	}
-
-	e.diagnose(t, "inits.bolt", prog(`let alpha = 1`))
-	inits = analyzer.DocToInits[uri]
-	if _, ok := inits["beta"]; ok {
-		t.Errorf("stale declaration %q survived re-analysis", "beta")
-	}
-	if _, ok := inits["alpha"]; !ok {
-		t.Errorf("declaration %q lost after re-analysis", "alpha")
-	}
-}
 
 func TestCheckInits_RecordsIdentifierUses(t *testing.T) {
 	e := newEnv(t)

@@ -108,7 +108,7 @@ func (p *Parser) parseSwitchExpression() ast.Expression {
 	} else {
 		sw.SwitchItem = p.parseExpression(LOWEST)
 		if !p.expectPeek(token.LBRACE) {
-			return nil
+			return sw
 		}
 	}
 	cases := []*ast.SwitchCase{}
@@ -117,12 +117,14 @@ func (p *Parser) parseSwitchExpression() ast.Expression {
 		cas := &ast.SwitchCase{Token: p.curToken, LineNum: p.curToken.Line}
 		if p.peekTokenIs(token.COLON) {
 			p.newError(p.curToken.Line, "Case in switch statement must have a value to check. cannot use: `case:` - line=%d", p.curToken.Line)
-			return nil
+			sw.Cases = cases
+			return sw
 		}
 		p.nextToken()
 		cas.Condition = p.parseExpression(LOWEST)
 		if !p.expectPeek(token.COLON) {
-			return nil
+			sw.Cases = cases
+			return sw
 		}
 		cas.Consequence = p.parseBlockStatement()
 		cases = append(cases, cas)
@@ -337,7 +339,7 @@ func (p *Parser) parseForExpression() ast.Expression {
 			val1, ok := f.Condition.(*ast.Identifier)
 			if !ok {
 				p.newError(p.curToken.Line, "Expected identifier token in range expression. got %s . line=%d", p.curToken.Type, p.curToken.Line)
-				return nil
+				return f
 			}
 			exp := &ast.RangeExpression{Token: tok, Val1: val1}
 			if p.curTokenIs(token.COMMA) {
@@ -348,30 +350,35 @@ func (p *Parser) parseForExpression() ast.Expression {
 					exp.Val2 = val2
 				} else {
 					p.newError(p.curToken.Line, "Expected identifier in range expression, got %s . line=%d", val2.Token.Type, p.curToken.Line)
-					return nil
+					f.Condition = exp
+					return f
 				}
 				p.nextToken()
 			}
 			if !p.curTokenIs(token.ASSIGN) {
 				p.newError(p.curToken.Line, "Expected equal token in range expression. got %s . line=%d", p.curToken.Type, p.curToken.Line)
-				return nil
+				f.Condition = exp
+				return f
 			}
 			if !p.expectPeek(token.RANGE) {
-				return nil
+				f.Condition = exp
+				return f
 			}
 			if p.peekTokenIs(token.LBRACE) {
 				p.newError(p.curToken.Line, "Need an expression to range over inside of for loop range expression. got } . line=%d", p.curToken.Line)
-				return nil
+				f.Condition = exp
+				return f
 			}
 			p.nextToken()
 			exp.Ranging = p.parseExpression(LOWEST)
 			if !p.expectPeek(token.LBRACE) {
-				return nil
+				f.Condition = exp
+				return f
 			}
 			f.Condition = exp
 
 		} else if !p.expectPeek(token.LBRACE) {
-			return nil
+			return f
 		}
 	}
 	f.Consequence = p.parseBlockStatement()
@@ -540,7 +547,7 @@ func (p *Parser) parseIfExpression() ast.Expression {
 	expression.Condition = p.parseExpression(LOWEST)
 
 	if !p.expectPeek(token.LBRACE) {
-		return nil
+		return expression
 	}
 
 	expression.Consequence = p.parseBlockStatement()
@@ -565,14 +572,14 @@ func (p *Parser) parseIfExpression() ast.Expression {
 				p.nextToken()
 				if p.peekTokenIs(token.LBRACE) {
 					p.newError(p.curToken.Line, "Else if needs condition, got { . line = %d", p.curToken.Line)
-					return nil
+					return expression
 				}
 				p.nextToken()
 
 				curExp.Condition = p.parseExpression(LOWEST)
 
 				if !p.expectPeek(token.LBRACE) {
-					return nil
+					return expression
 				}
 
 				curExp.Consequence = p.parseBlockStatement()
@@ -584,7 +591,7 @@ func (p *Parser) parseIfExpression() ast.Expression {
 				p.nextToken()
 				if !p.peekTokenIs(token.IF) {
 					if !p.expectPeek(token.LBRACE) {
-						return nil
+						return expression
 					}
 					curExp.Alternative = &ast.IfExpression{
 						Token:       p.curToken,
@@ -600,7 +607,7 @@ func (p *Parser) parseIfExpression() ast.Expression {
 
 			}
 		} else if !p.expectPeek(token.LBRACE) {
-			return nil
+			return expression
 		} else {
 			expression.Alternative = &ast.IfExpression{
 				Token:       p.curToken,

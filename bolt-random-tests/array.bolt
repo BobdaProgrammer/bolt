@@ -14,12 +14,15 @@ let z = fn(){
     let bob = 12
 }
 
+let x = fn(val){
+    let x = 12
+}
+
 struct a {
     jeff
 }
 
-let m.read = fn(){
-
+let m.read = fn(val){
 }
 
 // hello
