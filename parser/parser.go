@@ -266,7 +266,8 @@ func (p *Parser) parseStructInstantiation() ast.Expression {
 		ident := p.parseIdentifier().(*ast.Identifier)
 		if !p.expectPeek(token.COLON) {
 			p.newError(p.curToken.Line, "Expected colon in between struct value assignment. got=%s . line=%d", p.peekToken.Literal, p.curToken.Line)
-			return nil
+			sti.Fields = fields
+			return sti
 		}
 		p.nextToken()
 		val := p.parseExpression(LOWEST)
@@ -275,7 +276,8 @@ func (p *Parser) parseStructInstantiation() ast.Expression {
 			p.nextToken()
 			break
 		} else if !p.expectPeek(token.COMMA) {
-			return nil
+			sti.Fields = fields
+			return sti
 		}
 
 	}

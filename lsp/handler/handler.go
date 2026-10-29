@@ -2,15 +2,19 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BobdaProgrammer/bolt/ast"
+	"github.com/BobdaProgrammer/bolt/lexer"
 	"github.com/BobdaProgrammer/bolt/lsp/analyzer"
 	"github.com/BobdaProgrammer/bolt/lsp/hover"
 	"github.com/BobdaProgrammer/bolt/lsp/logging"
 	"github.com/BobdaProgrammer/bolt/std"
+	"github.com/BobdaProgrammer/bolt/token"
 	"github.com/BobdaProgrammer/bolt/utils"
 	"github.com/owenrumney/go-lsp/document"
 	"github.com/owenrumney/go-lsp/lsp"
@@ -152,12 +156,31 @@ var completions = []Completion{
 	},
 }
 
+type ScoreCompletion struct {
+	c lsp.CompletionItem
+	s int // score
+}
+
+func findCurrScopeForCompletion(line int, col int, uri lsp.DocumentURI) *analyzer.Scope {
+	identlines, ok := analyzer.DocToIdentLines[uri]
+	if ok {
+		for _, ident := range identlines.Idents {
+			logging.Logger.Println("completion", ident.Name, ident.Init.NodeCopy, "cursor at", line, col, "ident at", ident.Pos.Line-1, ident.Pos.StartColumn-1)
+			// Don't subtract one for endcolumn since the cursor will be after the ident
+			if line == ident.Pos.Line-1 && col >= ident.Pos.StartColumn-1 && col <= ident.Pos.EndColumn {
+				return ident.Scope
+			}
+		}
+	}
+	return nil
+}
+
 func (h *Handler) Completion(
 	_ context.Context,
 	params *lsp.CompletionParams,
 ) (*lsp.CompletionList, error) {
 
-	items := make([]lsp.CompletionItem, 0, len(completions))
+	items := []ScoreCompletion{}
 
 	for _, completion := range completions {
 		item := lsp.CompletionItem{
@@ -168,28 +191,157 @@ func (h *Handler) Completion(
 				Kind:  lsp.Markdown,
 				Value: completion.Documentation,
 			},
+			Preselect: boolPtr(true),
 		}
 
-		items = append(items, item)
+		items = append(items, ScoreCompletion{c: item, s: 1})
 	}
 
-	inits, ok := analyzer.DocToInits[params.TextDocument.URI]
+	scopes, ok := analyzer.DocToScopes[params.TextDocument.URI]
+	if sc := findCurrScopeForCompletion(params.Position.Line, params.Position.Character, params.TextDocument.URI); sc != nil {
+		scopes = []*analyzer.Scope{sc}
+		for sc.Outer != nil {
+			scopes = append(scopes, sc.Outer)
+			sc = sc.Outer
+		}
+	}
+	comments, ok := analyzer.DocToComments[params.TextDocument.URI]
+
+	doc, ok := h.documents.Get(params.TextDocument.URI)
+	lines := []string{}
+	tokensmap := map[token.Token]int{} // token to index
+	tokens := []token.Token{}
+	if ok {
+		lines = doc.Lines()
+		l := lexer.New(strings.Join(lines, "\n"))
+		i := 0
+		for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() {
+			tokensmap[tok] = i
+			tokens = append(tokens, tok)
+			i++
+		}
+	}
+
 	if ok {
 		kind := lsp.CompletionItemKindVariable
-		for name := range inits {
-			items = append(items, lsp.CompletionItem{
-				Label:         name,
-				Kind:          &kind,
-				Detail:        name,
-				Documentation: &lsp.MarkupContent{Kind: lsp.Markdown, Value: "Documentation for " + name},
-			})
+		for _, scope := range scopes {
+			for name, init := range scope.Vals {
+				if init.Kind == analyzer.STRUCT_INSTANCE && init.NodeCopy != nil {
+					si, ok := init.NodeCopy.(*ast.StructInstantiation)
+					if ok {
+						lowest := getLowestLine(si.Fields, tokensmap, tokens)
+						if lowest == -1 {
+							lowest = init.Line
+						}
+						if params.Position.Line >= init.Line-1 && params.Position.Line <= lowest-1 {
+							if id, ok := si.Left.(*ast.Identifier); ok {
+								// if we are on starting line, cursor must be after the identifier that sits before the {
+								if params.Position.Line == init.Line-1 && params.Position.Character < id.Token.Column {
+									goto skipPoint
+								}
+								if scope.Exists(id.Value) {
+									stType := scope.Lookup(id.Value)
+									if stType.Kind == analyzer.STRUCT {
+
+										if stType.NodeCopy != nil {
+											stru, ok := stType.NodeCopy.(*ast.StructType)
+											if ok {
+												for _, field := range stru.Fields {
+													items = append(items, ScoreCompletion{c: lsp.CompletionItem{
+														Label:         field.Value,
+														Kind:          &kind,
+														Detail:        "STRUCT FIELD",
+														Documentation: &lsp.MarkupContent{Kind: lsp.Markdown, Value: "`" + field.Value + "`: field of struct `" + id.Value + "`"},
+														Preselect:     boolPtr(true),
+													}, s: 3})
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			skipPoint:
+				hov := ""
+
+				if init.NodeCopy != nil {
+					if init.ImportFile != "" {
+						comments = analyzer.DocToComments[lsp.DocumentURI(init.ImportFile)]
+					}
+					if doc := hover.Documentation(init.NodeCopy, init, name, scope, comments); doc != "" { // TODO: give it letident instead of nil
+						hov = doc
+					} else {
+						hov += "```bolt\n" + name + " = " + init.NodeCopy.String() + "\n```"
+					}
+					if init.ImportFile != "" {
+						comments = analyzer.DocToComments[params.TextDocument.URI]
+					}
+				}
+				items = append(items, ScoreCompletion{c: lsp.CompletionItem{
+					Label:         name,
+					Kind:          &kind,
+					Detail:        analyzer.InitTypeToString[init.Kind],
+					Documentation: &lsp.MarkupContent{Kind: lsp.Markdown, Value: hov},
+					Preselect:     boolPtr(true),
+				}, s: 3})
+			}
 		}
 	}
+
+	sorted := sortedValues(items)
 
 	return &lsp.CompletionList{
 		IsIncomplete: false,
-		Items:        items,
+		Items:        sorted,
 	}, nil
+}
+
+func getLowestLine(expression map[*ast.Identifier]ast.Expression, tokenMap map[token.Token]int, tokens []token.Token) int {
+	lowestline := -1
+	for id, ex := range expression {
+		if ex.Line() > lowestline {
+			lowestline = ex.Line()
+			if ind, ok := tokenMap[id.Token]; ok {
+				opened := 0
+				// go through the tokens until we find the closing brace of the struct
+				for i := ind; i < len(tokens); i++ {
+					if tokens[i].Type == token.LBRACE {
+						opened++
+					}
+
+					if tokens[i].Type == token.RBRACE {
+						if opened == 0 {
+							lowestline = tokens[i].Line
+							break
+						} else {
+							opened--
+						}
+					}
+
+					if i == len(tokens)-1 {
+						lowestline = tokens[i].Line
+					}
+				}
+			}
+		}
+	}
+	return lowestline
+}
+func sortedValues(candidates []ScoreCompletion) []lsp.CompletionItem {
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].s > candidates[j].s
+	})
+
+	values := make([]lsp.CompletionItem, len(candidates))
+	for i, c := range candidates {
+		completion := c.c
+		completion.SortText = fmt.Sprintf("%05d", i)
+		values[i] = completion
+	}
+
+	return values
 }
 
 // Handler implements the LSP handler interfaces for bolt.
@@ -428,6 +580,9 @@ func (h *Handler) Definition(ctx context.Context, params *lsp.DefinitionParams) 
 
 		logging.Logger.Println("Looking for ident with Line:", params.Position.Line, "Character:", params.Position.Character)
 		for _, LocInit := range identlines.Idents {
+			if !LocInit.Exists {
+				continue
+			}
 			logging.Logger.Println(LocInit.Name+": - Line:", LocInit.Pos.Line-1, "- Columns:", LocInit.Pos.StartColumn-1, LocInit.Pos.EndColumn-1, "- Position: ", LocInit.Init.Line-1, LocInit.Init.ImportFile)
 			if params.Position.Line == LocInit.Pos.Line-1 && params.Position.Character >= LocInit.Pos.StartColumn-1 && params.Position.Character <= LocInit.Pos.EndColumn-1 {
 				uri := params.TextDocument.URI
@@ -538,6 +693,9 @@ func (h *Handler) Hover(_ context.Context, params *lsp.HoverParams) (*lsp.Hover,
 	if ok {
 		logging.Logger.Println("Getting ident in hover for", params.Position)
 		for _, LocInit := range identlines.Idents {
+			if !LocInit.Exists {
+				continue
+			}
 			logging.Logger.Println(LocInit.Pos.Line-1, LocInit.Pos.StartColumn-1, LocInit.Pos.EndColumn-1, LocInit.Name)
 			if params.Position.Line == LocInit.Pos.Line-1 && params.Position.Character >= LocInit.Pos.StartColumn-1 && params.Position.Character <= LocInit.Pos.EndColumn-1 {
 				logging.Logger.Println("Got ident in hover", LocInit)

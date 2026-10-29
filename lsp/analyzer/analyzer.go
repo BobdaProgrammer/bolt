@@ -40,10 +40,11 @@ type Position struct {
 }
 
 type LocationInit struct {
-	Scope *Scope
-	Name  string
-	Init  *Initialised
-	Pos   Position
+	Scope  *Scope
+	Name   string
+	Init   *Initialised
+	Exists bool
+	Pos    Position
 }
 
 type DocumentIdentLines struct {
@@ -52,7 +53,7 @@ type DocumentIdentLines struct {
 
 var DocToIdentLines map[lsp.DocumentURI]DocumentIdentLines = map[lsp.DocumentURI]DocumentIdentLines{}
 var DocToComments = map[lsp.DocumentURI]map[int]lexer.Comment{}
-var DocToInits = map[lsp.DocumentURI]map[string]*Initialised{}
+var DocToScopes = map[lsp.DocumentURI][]*Scope{}
 
 var Modulemap map[string]*Module = map[string]*Module{}
 
@@ -204,43 +205,55 @@ type Initialised struct {
 }
 
 type Scope struct {
-	vals   map[string]*Initialised
+	Line   int
+	Vals   map[string]*Initialised
 	idents []Ident
-	outer  *Scope
+	Outer  *Scope
 }
 
 func (s *Scope) Exists(val string) bool {
-	if _, ok := s.vals[val]; ok {
+	if _, ok := s.Vals[val]; ok {
 		return true
-	} else if s.outer != nil {
-		return s.outer.Exists(val)
+	} else if s.Outer != nil {
+		return s.Outer.Exists(val)
 	} else {
 		return false
 	}
 }
 func (s *Scope) Lookup(val string) *Initialised {
-	if i, ok := s.vals[val]; ok {
+	if i, ok := s.Vals[val]; ok {
 		return i
-	} else if s.outer != nil {
-		return s.outer.Lookup(val)
+	} else if s.Outer != nil {
+		return s.Outer.Lookup(val)
 	} else {
 		return &Initialised{Line: -1, Column: -1, Kind: UNKNOWN}
 	}
 }
 
-func NewScope() *Scope {
+func NewScope(line ...int) *Scope {
+	l := -1
+	if len(line) > 0 {
+		l = line[0]
+	}
 	return &Scope{
-		vals:   map[string]*Initialised{},
+		Vals:   map[string]*Initialised{},
 		idents: []Ident{},
-		outer:  nil,
+		Outer:  nil,
+		Line:   l,
 	}
 }
 
-func NewEnclosedScope(outer *Scope) *Scope {
+func NewEnclosedScope(Outer *Scope, line ...int) *Scope {
+	l := -1
+	if len(line) > 0 {
+		l = line[0]
+	}
+
 	return &Scope{
-		vals:   map[string]*Initialised{},
+		Vals:   map[string]*Initialised{},
 		idents: []Ident{},
-		outer:  outer,
+		Outer:  Outer,
+		Line:   l,
 	}
 }
 
@@ -327,7 +340,7 @@ func getStartColumn(tok token.Token) int {
 
 func walkStructInstantiations(context Context, si *ast.StructInstantiation, curr string, scope *Scope, diags *[]LineDiagnostic, runWalk func(n ast.Node, r RoleType, c ...Context), pos Position, init *Initialised) {
 
-	scope.vals[curr] = &Initialised{Line: pos.Line, Column: pos.StartColumn, Kind: STRUCT_INSTANCE, NodeCopy: si, Extras: map[string]NodePos{}}
+	scope.Vals[curr] = &Initialised{Line: pos.Line, Column: pos.StartColumn, Kind: STRUCT_INSTANCE, NodeCopy: si, Extras: map[string]NodePos{}}
 	if id, ok := si.Left.(*ast.Identifier); ok {
 		runWalk(id, STRUCT_TYPE)
 		fmap := map[string]bool{}
@@ -344,7 +357,7 @@ func walkStructInstantiations(context Context, si *ast.StructInstantiation, curr
 			st := stru.NodeCopy.(*ast.StructType)
 			for _, field := range st.Fields {
 				fieldmap[field.Value] = true
-				scope.vals[curr+"."+field.Value] = &Initialised{
+				scope.Vals[curr+"."+field.Value] = &Initialised{
 					Line:   field.Line(),
 					Column: getStartColumn(field.Token),
 					Kind:   UNKNOWN,
@@ -353,8 +366,8 @@ func walkStructInstantiations(context Context, si *ast.StructInstantiation, curr
 
 			for method, nodepos := range stru.Extras {
 				pos := nodepos.Pos
-				scope.vals[curr].Extras[method] = NodePos{Pos: Position{Line: pos.Line, StartColumn: pos.StartColumn, EndColumn: pos.EndColumn}, NodeCopy: nodepos.NodeCopy}
-				scope.vals[curr+"."+method] = &Initialised{
+				scope.Vals[curr].Extras[method] = NodePos{Pos: Position{Line: pos.Line, StartColumn: pos.StartColumn, EndColumn: pos.EndColumn}, NodeCopy: nodepos.NodeCopy}
+				scope.Vals[curr+"."+method] = &Initialised{
 					Line:     pos.Line,
 					Column:   pos.StartColumn,
 					Kind:     FUNCTION,
@@ -366,8 +379,8 @@ func walkStructInstantiations(context Context, si *ast.StructInstantiation, curr
 		} else if init != nil && init.Extras != nil && len(init.Extras) > 0 {
 			for method, nodepos := range init.Extras {
 				pos := nodepos.Pos
-				scope.vals[curr].Extras[method] = NodePos{Pos: Position{Line: pos.Line, StartColumn: pos.StartColumn, EndColumn: pos.EndColumn}, NodeCopy: nodepos.NodeCopy}
-				scope.vals[curr+"."+method] = &Initialised{
+				scope.Vals[curr].Extras[method] = NodePos{Pos: Position{Line: pos.Line, StartColumn: pos.StartColumn, EndColumn: pos.EndColumn}, NodeCopy: nodepos.NodeCopy}
+				scope.Vals[curr+"."+method] = &Initialised{
 					Line:     pos.Line,
 					NodeCopy: nodepos.NodeCopy,
 					Column:   pos.StartColumn,
@@ -383,7 +396,7 @@ func walkStructInstantiations(context Context, si *ast.StructInstantiation, curr
 				}
 			}
 
-			scope.vals[curr+"."+name.Value] = &Initialised{
+			scope.Vals[curr+"."+name.Value] = &Initialised{
 				Line:     name.Line(),
 				Column:   getStartColumn(name.Token),
 				NodeCopy: val,
@@ -405,10 +418,10 @@ func walkStructInstantiations(context Context, si *ast.StructInstantiation, curr
 func walkStructInstantiationsImport(val ast.Expression, curr string, scope *Scope, privScope *Scope, imp string, isPub bool, pos Position) {
 	if sInst, ok := val.(*ast.StructInstantiation); ok {
 		if isPub {
-			scope.vals[curr] = &Initialised{Line: pos.Line, Column: pos.StartColumn, Kind: STRUCT_INSTANCE, NodeCopy: sInst, ImportFile: imp, Extras: map[string]NodePos{}}
+			scope.Vals[curr] = &Initialised{Line: pos.Line, Column: pos.StartColumn, Kind: STRUCT_INSTANCE, NodeCopy: sInst, ImportFile: imp, Extras: map[string]NodePos{}}
 		}
 
-		privScope.vals[curr] = &Initialised{Line: pos.Line, Column: pos.StartColumn, Kind: STRUCT_INSTANCE, NodeCopy: sInst, ImportFile: imp, Extras: map[string]NodePos{}}
+		privScope.Vals[curr] = &Initialised{Line: pos.Line, Column: pos.StartColumn, Kind: STRUCT_INSTANCE, NodeCopy: sInst, ImportFile: imp, Extras: map[string]NodePos{}}
 		if stTypeIdent, ok := sInst.Left.(*ast.Identifier); ok {
 			if !privScope.Exists(stTypeIdent.Value) {
 				return
@@ -418,8 +431,8 @@ func walkStructInstantiationsImport(val ast.Expression, curr string, scope *Scop
 			for method, nodepos := range stType.Extras {
 				position := nodepos.Pos
 				if isPub {
-					scope.vals[curr].Extras[method] = NodePos{Pos: Position{Line: position.Line, StartColumn: position.StartColumn, EndColumn: position.EndColumn}, NodeCopy: nodepos.NodeCopy}
-					scope.vals[curr+"."+method] = &Initialised{
+					scope.Vals[curr].Extras[method] = NodePos{Pos: Position{Line: position.Line, StartColumn: position.StartColumn, EndColumn: position.EndColumn}, NodeCopy: nodepos.NodeCopy}
+					scope.Vals[curr+"."+method] = &Initialised{
 						Line:       position.Line,
 						Column:     position.StartColumn,
 						Kind:       FUNCTION,
@@ -427,8 +440,8 @@ func walkStructInstantiationsImport(val ast.Expression, curr string, scope *Scop
 						ImportFile: imp,
 					}
 				}
-				privScope.vals[curr].Extras[method] = NodePos{Pos: Position{Line: position.Line, StartColumn: position.StartColumn, EndColumn: position.EndColumn}, NodeCopy: nodepos.NodeCopy}
-				privScope.vals[curr+"."+method] = &Initialised{
+				privScope.Vals[curr].Extras[method] = NodePos{Pos: Position{Line: position.Line, StartColumn: position.StartColumn, EndColumn: position.EndColumn}, NodeCopy: nodepos.NodeCopy}
+				privScope.Vals[curr+"."+method] = &Initialised{
 					Line:       position.Line,
 					Column:     position.StartColumn,
 					Kind:       FUNCTION,
@@ -438,7 +451,7 @@ func walkStructInstantiationsImport(val ast.Expression, curr string, scope *Scop
 			}
 			for field, value := range sInst.Fields {
 				if isPub {
-					scope.vals[curr+"."+field.Value] = &Initialised{
+					scope.Vals[curr+"."+field.Value] = &Initialised{
 						Line:       field.Line(),
 						Column:     getStartColumn(field.Token),
 						Kind:       GetInitType(value, scope),
@@ -446,7 +459,7 @@ func walkStructInstantiationsImport(val ast.Expression, curr string, scope *Scop
 						NodeCopy:   value,
 					}
 				}
-				privScope.vals[curr+"."+field.Value] = &Initialised{
+				privScope.Vals[curr+"."+field.Value] = &Initialised{
 					Line:       field.Line(),
 					Column:     getStartColumn(field.Token),
 					Kind:       GetInitType(value, scope),
@@ -463,8 +476,8 @@ func walkStructInstantiationsImport(val ast.Expression, curr string, scope *Scop
 }
 
 func ProcessImport(p *ast.Program, modulename string, imp string) []Export {
-	privScope := NewScope()
-	sc := NewScope()
+	privScope := NewScope(1)
+	sc := NewScope(1)
 	for _, stmt := range p.Statements {
 		if !IsNil(stmt) {
 			WalkImport(stmt, sc, privScope, modulename, false, imp)
@@ -472,7 +485,7 @@ func ProcessImport(p *ast.Program, modulename string, imp string) []Export {
 	}
 
 	exports := []Export{Export{Name: modulename, Init: &Initialised{Line: 1, Column: 1, ImportFile: imp, Kind: MODULE}}}
-	for letident, init := range sc.vals {
+	for letident, init := range sc.Vals {
 		logging.Logger.Println("Import: ", letident)
 		if init.Kind == STRUCT_INSTANCE {
 			if init.NodeCopy == nil {
@@ -527,9 +540,9 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 			letident = i
 			in := &Initialised{Line: n.Left.Line(), Column: getStartColumn(i.Token), Kind: GetInitType(n.Value, scope), ImportFile: imp, NodeCopy: n.Value}
 			if isPub {
-				scope.vals[name+"."+i.Value] = in
+				scope.Vals[name+"."+i.Value] = in
 			}
-			privScope.vals[name+"."+i.Value] = in
+			privScope.Vals[name+"."+i.Value] = in
 		} else if fa, ok := n.Left.(*ast.FieldAccess); ok && privScope.Exists(fa.Left.String()) {
 			if privScope.Lookup(fa.Left.String()).Kind != STRUCT {
 				break
@@ -542,7 +555,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 			for _, el := range arr.Elements {
 				if id, ok := el.(*ast.Identifier); ok {
 					if isPub {
-						scope.vals[name+"."+id.Value] = &Initialised{
+						scope.Vals[name+"."+id.Value] = &Initialised{
 							Line:       id.Line(),
 							Column:     getStartColumn(id.Token),
 							ImportFile: imp,
@@ -550,7 +563,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 						}
 					}
 
-					privScope.vals[name+"."+id.Value] = &Initialised{
+					privScope.Vals[name+"."+id.Value] = &Initialised{
 						Line:       id.Line(),
 						Column:     getStartColumn(id.Token),
 						ImportFile: imp,
@@ -558,7 +571,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 					}
 				} else if fa, ok := el.(*ast.FieldAccess); ok {
 					if isPub {
-						scope.vals[name+"."+fieldAccessStr(fa, fa.Left.String())] = &Initialised{
+						scope.Vals[name+"."+fieldAccessStr(fa, fa.Left.String())] = &Initialised{
 							Line:       fa.Line(),
 							Column:     getStartColumn(fa.Token),
 							ImportFile: imp,
@@ -566,7 +579,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 						}
 					}
 
-					privScope.vals[name+"."+fieldAccessStr(fa, fa.Left.String())] = &Initialised{
+					privScope.Vals[name+"."+fieldAccessStr(fa, fa.Left.String())] = &Initialised{
 						Line:       fa.Line(),
 						Column:     getStartColumn(fa.Token),
 						ImportFile: imp,
@@ -579,7 +592,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 		if si, ok := n.Value.(*ast.StructInstantiation); ok && letstr != "" {
 			walkStructInstantiationsImport(si, name+"."+letstr, scope, privScope, imp, isPub, Position{Line: n.Left.Line(), StartColumn: getStartColumn(letident.Token), EndColumn: letident.Token.Column})
 		} else if sc, ok := n.Value.(*ast.StructTypeConversion); ok && letstr != "" {
-			st, fields, _ := evalStructConversionImport(sc, scope, privScope, name, name+"."+letstr, isPub, imp)
+			st, fields, _ := evalstructConversionImport(sc, scope, privScope, name, name+"."+letstr, isPub, imp)
 
 			logging.Logger.Println("Struct conversion import", st, fields)
 			if st != nil && len(fields) > 0 && letident != nil {
@@ -590,7 +603,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 					pos := nodepos.Pos
 					extras[ex] = NodePos{Pos: Position{Line: pos.Line, StartColumn: pos.StartColumn, EndColumn: pos.EndColumn}}
 					if isPub {
-						scope.vals[name+"."+letstr+"."+ex] = &Initialised{
+						scope.Vals[name+"."+letstr+"."+ex] = &Initialised{
 							Line:       pos.Line,
 							Column:     pos.StartColumn,
 							NodeCopy:   nodepos.NodeCopy,
@@ -598,7 +611,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 							ImportFile: imp,
 						}
 					}
-					privScope.vals[name+"."+letstr+"."+ex] = &Initialised{
+					privScope.Vals[name+"."+letstr+"."+ex] = &Initialised{
 						Line:       pos.Line,
 						Column:     pos.StartColumn,
 						NodeCopy:   nodepos.NodeCopy,
@@ -610,9 +623,9 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 				si.Left = &ast.Identifier{Value: stType.Name.Value}
 
 				for nam, t := range fields {
-					// Hidden init since there is no actual source code location where it is initialised and so we don't want to confuse the hover handler or go to definition handler by having multiple identliens in one place
+					// Hidden init since there is no actual source code location where it is initialised and so we don't want to confuse the hover handler or go to definition handler by having multiple identlines in one place
 					if isPub {
-						scope.vals[name+"."+letstr+"."+nam.Value] = &Initialised{
+						scope.Vals[name+"."+letstr+"."+nam.Value] = &Initialised{
 							Line:       sc.Line(),
 							Column:     getStartColumn(sc.Token),
 							NodeCopy:   t,
@@ -621,7 +634,7 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 							ImportFile: imp,
 						}
 					}
-					privScope.vals[name+"."+letstr+"."+nam.Value] = &Initialised{
+					privScope.Vals[name+"."+letstr+"."+nam.Value] = &Initialised{
 						Line:       sc.Line(),
 						Column:     getStartColumn(sc.Token),
 						NodeCopy:   t,
@@ -633,9 +646,9 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 				}
 				si.Fields = sifields
 				if isPub {
-					scope.vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: STRUCT_INSTANCE, NodeCopy: si, ImportFile: imp, Extras: extras}
+					scope.Vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: STRUCT_INSTANCE, NodeCopy: si, ImportFile: imp, Extras: extras}
 				}
-				privScope.vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: STRUCT_INSTANCE, NodeCopy: si, ImportFile: imp, Extras: extras}
+				privScope.Vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: STRUCT_INSTANCE, NodeCopy: si, ImportFile: imp, Extras: extras}
 			}
 		} else if letstr != "" {
 
@@ -660,9 +673,9 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 				logging.Logger.Println("field access let statement", fa.String(), InitTypeToString[rt])
 				if idstr == "" && rt != UNKNOWN {
 					if isPub {
-						scope.vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
+						scope.Vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
 					}
-					privScope.vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
+					privScope.Vals[name+"."+letstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
 				}
 			}
 
@@ -674,14 +687,14 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 					walkStructInstantiationsImport(si, name+"."+letstr, scope, privScope, imp, isPub, Position{Line: line, StartColumn: scol, EndColumn: ecol})
 				} else {
 					if isPub {
-						scope.vals[name+"."+letstr] = &Initialised{
+						scope.Vals[name+"."+letstr] = &Initialised{
 							Line:       n.Left.Line(),
 							Column:     getStartColumn(letident.Token),
 							Kind:       t.Kind,
 							ImportFile: imp,
 						}
 					}
-					privScope.vals[name+"."+letstr] = &Initialised{
+					privScope.Vals[name+"."+letstr] = &Initialised{
 						Line:       n.Left.Line(),
 						Column:     getStartColumn(letident.Token),
 						Kind:       t.Kind,
@@ -694,18 +707,18 @@ func WalkImport(n ast.Node, scope *Scope, privScope *Scope, name string, isPub b
 	case *ast.StructType:
 		if isPub {
 			i := &Initialised{Line: n.Name.Line(), Column: getStartColumn(n.Name.Token), Kind: STRUCT, ImportFile: imp, Extras: map[string]NodePos{}, NodeCopy: n}
-			scope.vals[name+"."+n.Name.Value] = i
+			scope.Vals[name+"."+n.Name.Value] = i
 		}
 		i := &Initialised{Line: n.Name.Line(), Column: getStartColumn(n.Name.Token), Kind: STRUCT, Extras: map[string]NodePos{}, NodeCopy: n, ImportFile: imp}
 
-		privScope.vals[n.Name.Value] = i
+		privScope.Vals[n.Name.Value] = i
 
 	case *ast.PubStatement:
 		WalkImport(n.Stmt, scope, privScope, name, true, imp)
 	}
 }
 
-func evalStructConversionImport(sc *ast.StructTypeConversion, scope *Scope, privScope *Scope, name string, letIdent string, isPub bool, imp string) (*Initialised, map[*ast.Identifier]ast.Expression, map[string]ast.Expression) {
+func evalstructConversionImport(sc *ast.StructTypeConversion, scope *Scope, privScope *Scope, name string, letIdent string, isPub bool, imp string) (*Initialised, map[*ast.Identifier]ast.Expression, map[string]ast.Expression) {
 	leftStr := ""
 	var left *ast.StructInstantiation = nil
 	if id, ok := sc.Left.(*ast.Identifier); ok {
@@ -756,14 +769,14 @@ func evalStructConversionImport(sc *ast.StructTypeConversion, scope *Scope, priv
 		rightnames[field.Value] = true
 		if letIdent != "" {
 			if isPub {
-				scope.vals[letIdent+"."+field.Value] = &Initialised{
+				scope.Vals[letIdent+"."+field.Value] = &Initialised{
 					Line:       field.Line(),
 					Column:     getStartColumn(field.Token),
 					Kind:       UNKNOWN,
 					ImportFile: imp,
 				}
 			}
-			privScope.vals[letIdent+"."+field.Value] = &Initialised{
+			privScope.Vals[letIdent+"."+field.Value] = &Initialised{
 				Line:       field.Line(),
 				Column:     getStartColumn(field.Token),
 				Kind:       UNKNOWN,
@@ -819,7 +832,7 @@ func getStructInstance(scope *Scope, str string, diags *[]LineDiagnostic, line i
 	}
 }
 
-func evalStructConversion(sc *ast.StructTypeConversion, diags *[]LineDiagnostic, scope *Scope, letIdent string) (*Initialised, map[*ast.Identifier]ast.Expression, map[string]ast.Expression) {
+func evalstructConversion(sc *ast.StructTypeConversion, diags *[]LineDiagnostic, scope *Scope, letIdent string) (*Initialised, map[*ast.Identifier]ast.Expression, map[string]ast.Expression) {
 	leftStr := ""
 	var left *ast.StructInstantiation = nil
 	if id, ok := sc.Left.(*ast.Identifier); ok {
@@ -870,7 +883,7 @@ func evalStructConversion(sc *ast.StructTypeConversion, diags *[]LineDiagnostic,
 	for _, field := range right.Fields {
 		rightnames[field.Value] = true
 		if letIdent != "" {
-			scope.vals[letIdent+"."+field.Value] = &Initialised{
+			scope.Vals[letIdent+"."+field.Value] = &Initialised{
 				Line:   field.Line(),
 				Column: getStartColumn(field.Token),
 				Kind:   UNKNOWN,
@@ -1033,7 +1046,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		}
 	case *ast.ImportStatement:
 		// if in top scope
-		if scope.outer == nil {
+		if scope.Outer == nil {
 			can, err := CanonicalPath(n.Value)
 			path := n.Value
 			if err == nil {
@@ -1043,9 +1056,9 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 
 			if m, ok := Modulemap[path]; ok {
 				for _, exp := range m.Exports {
-					scope.vals[exp.Name] = exp.Init
+					scope.Vals[exp.Name] = exp.Init
 				}
-				*identLines = append(*identLines, LocationInit{Pos: Position{Line: n.Line(), StartColumn: n.Token.Column + 2, EndColumn: n.Token.Column + 2 + len(n.Value) + 1}, Scope: scope, Name: path, Init: &Initialised{Line: 1, Column: 1, ImportFile: path, Kind: MODULE}})
+				*identLines = append(*identLines, LocationInit{Pos: Position{Line: n.Line(), StartColumn: n.Token.Column + 2, EndColumn: n.Token.Column + 2 + len(n.Value) + 1}, Scope: scope, Name: path, Init: &Initialised{Line: 1, Column: 1, ImportFile: path, Kind: MODULE}, Exists: true})
 			} else {
 				program, modulename, extradiag, isStd, p := GetImport(n.Value, n.Line())
 				if isStd {
@@ -1063,12 +1076,12 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 					exports := ProcessImport(program, modulename, path)
 
 					for _, exp := range exports {
-						scope.vals[exp.Name] = exp.Init
+						scope.Vals[exp.Name] = exp.Init
 					}
 
 					logging.Logger.Println("DONE IMPORTING", path)
 					Modulemap[path] = &Module{Name: path, Exports: exports}
-					*identLines = append(*identLines, LocationInit{Pos: Position{Line: n.Line(), StartColumn: n.Token.Column + 2, EndColumn: n.Token.Column + 2 + len(n.Value) + 1}, Scope: scope, Name: modulename, Init: &Initialised{Line: 1, Column: 1, ImportFile: path, Kind: MODULE}})
+					*identLines = append(*identLines, LocationInit{Pos: Position{Line: n.Line(), StartColumn: n.Token.Column + 2, EndColumn: n.Token.Column + 2 + len(n.Value) + 1}, Scope: scope, Name: modulename, Init: &Initialised{Line: 1, Column: 1, ImportFile: path, Kind: MODULE}, Exists: true})
 				}
 			}
 			(*dependencies)[path] = true
@@ -1153,7 +1166,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		runWalk(n.StType, scope, STRUCT_TYPE)
 		runWalk(n.Left, scope, STRUCT_INSTANCE_ROLE)
 		if _, ok := context.lastNode.(*ast.FieldAccess); !ok {
-			evalStructConversion(n, diags, scope, "")
+			evalstructConversion(n, diags, scope, "")
 		}
 	case *ast.RangeExpression:
 		runWalk(n.Ranging, scope, RANGE_ROLE)
@@ -1175,7 +1188,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		var letident *ast.Identifier
 		if ident, ok := n.Left.(*ast.Identifier); ok {
 			letident = ident
-			scope.vals[ident.Value] = &Initialised{
+			scope.Vals[ident.Value] = &Initialised{
 				Line:     n.Left.Line(),
 				Column:   getStartColumn(ident.Token),
 				NodeCopy: n.Value,
@@ -1187,22 +1200,22 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 			if r, ok := fa.Right.(*ast.Identifier); ok && scope.Exists(fa.Left.String()) && leftval.Kind == STRUCT {
 				if fn, ok := n.Value.(*ast.FunctionLiteral); ok {
 					// create a new enclosed scope and walk the function
-					newscope := NewEnclosedScope(scope)
+					newscope := NewEnclosedScope(scope, fn.Line())
 					*scopes = append(*scopes, newscope)
 					for _, param := range fn.Parameters {
-						newscope.vals[param.Value] = &Initialised{
+						newscope.Vals[param.Value] = &Initialised{
 							Line:   n.Line(),
 							Column: getStartColumn(param.Token),
 							Kind:   UNKNOWN,
 						}
 					}
-					newscope.vals[fa.Left.String()] = &Initialised{Line: leftval.Line, Column: leftval.Column, Kind: UNKNOWN}
+					newscope.Vals[fa.Left.String()] = &Initialised{Line: leftval.Line, Column: leftval.Column, Kind: UNKNOWN}
 					str := leftval.NodeCopy.(*ast.StructType)
 
 					leftval.Extras[fa.Right.String()] = NodePos{Pos: Position{Line: fa.Line(), StartColumn: getStartColumn(r.Token), EndColumn: r.Token.Column}, NodeCopy: fn}
 
 					for _, field := range str.Fields {
-						newscope.vals[fa.Left.String()+"."+field.Value] = &Initialised{Line: leftval.Line, Column: leftval.Column, Kind: UNKNOWN}
+						newscope.Vals[fa.Left.String()+"."+field.Value] = &Initialised{Line: leftval.Line, Column: leftval.Column, Kind: UNKNOWN}
 					}
 					runWalk(fn.Body, newscope, NIL)
 					break
@@ -1217,13 +1230,13 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 
 			for _, el := range arr.Elements {
 				if id, ok := el.(*ast.Identifier); ok {
-					scope.vals[id.Value] = &Initialised{
+					scope.Vals[id.Value] = &Initialised{
 						Line:   id.Line(),
 						Column: getStartColumn(id.Token),
 						Kind:   UNKNOWN,
 					}
 				} else if fa, ok := el.(*ast.FieldAccess); ok {
-					scope.vals[fieldAccessStr(fa, fa.Left.String())] = &Initialised{
+					scope.Vals[fieldAccessStr(fa, fa.Left.String())] = &Initialised{
 						Line:   fa.Line(),
 						Column: getStartColumn(fa.Token),
 						Kind:   UNKNOWN,
@@ -1249,7 +1262,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		} else if sc, ok := n.Value.(*ast.StructTypeConversion); ok && identstr != "" {
 			runWalk(sc.StType, scope, STRUCT_TYPE)
 			runWalk(sc.Left, scope, STRUCT_INSTANCE_ROLE)
-			st, fields, _ := evalStructConversion(sc, diags, scope, identstr)
+			st, fields, _ := evalstructConversion(sc, diags, scope, identstr)
 			if st != nil && len(fields) > 0 {
 				sifields := map[*ast.Identifier]ast.Expression{}
 				si := &ast.StructInstantiation{LineNum: n.Left.Line()}
@@ -1257,7 +1270,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 				for ex, nodepos := range st.Extras {
 					pos := nodepos.Pos
 					extras[ex] = NodePos{Pos: Position{Line: pos.Line, StartColumn: pos.StartColumn, EndColumn: pos.EndColumn}}
-					scope.vals[identstr+"."+ex] = &Initialised{
+					scope.Vals[identstr+"."+ex] = &Initialised{
 						Line:     pos.Line,
 						Column:   pos.StartColumn,
 						NodeCopy: nodepos.NodeCopy,
@@ -1268,8 +1281,8 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 				si.Left = &ast.Identifier{Value: stType.Name.Value}
 
 				for name, t := range fields {
-					// Hidden init since there is no actual source code location where it is initialised and so we don't want to confuse the hover handler or go to definition handler by having multiple identliens in one place
-					scope.vals[identstr+"."+name.Value] = &Initialised{
+					// Hidden init since there is no actual source code location where it is initialised and so we don't want to confuse the hover handler or go to definition handler by having multiple identlines in one place
+					scope.Vals[identstr+"."+name.Value] = &Initialised{
 						Line:       sc.Line(),
 						Column:     getStartColumn(sc.Token),
 						NodeCopy:   t,
@@ -1279,7 +1292,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 					sifields[name] = t
 				}
 				si.Fields = sifields
-				scope.vals[identstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: STRUCT_INSTANCE, NodeCopy: si, Extras: extras}
+				scope.Vals[identstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: STRUCT_INSTANCE, NodeCopy: si, Extras: extras}
 			}
 		} else if identstr != "" {
 			// Walk the other side of the let statement
@@ -1295,7 +1308,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 				logging.Logger.Println("field access as value of let statement", fa.String())
 				rt := evalFieldAccess(fa, scope, Context{letIdent: identstr, inFor: context.inFor, isStd: context.isStd, lastNode: n}, diags, runWalk)
 				if idstr == "" {
-					scope.vals[identstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
+					scope.Vals[identstr] = &Initialised{Line: n.Left.Line(), Column: getStartColumn(letident.Token), Kind: rt, NodeCopy: fa}
 				}
 			}
 			if !isFa {
@@ -1320,7 +1333,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 					walkStructInstantiations(context, si, identstr, scope, diags, rWalk, Position{Line: n.Left.Line(), EndColumn: letident.Token.Column, StartColumn: getStartColumn(letident.Token)}, t)
 
 				} else {
-					scope.vals[identstr] = &Initialised{
+					scope.Vals[identstr] = &Initialised{
 						Line:   n.Left.Line(),
 						Column: getStartColumn(letident.Token),
 						Kind:   t.Kind,
@@ -1370,7 +1383,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 
 	case *ast.StructType:
 		// record struct type initialisation
-		scope.vals[n.Name.Value] = &Initialised{
+		scope.Vals[n.Name.Value] = &Initialised{
 			Line:     n.Line(),
 			Column:   getStartColumn(n.Name.Token),
 			Kind:     GetInitType(n, scope),
@@ -1380,10 +1393,10 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 
 	case *ast.FunctionLiteral:
 		// create a new enclosed scope and walk the function
-		newscope := NewEnclosedScope(scope)
+		newscope := NewEnclosedScope(scope, n.Line())
 		*scopes = append(*scopes, newscope)
 		for _, param := range n.Parameters {
-			newscope.vals[param.Value] = &Initialised{
+			newscope.Vals[param.Value] = &Initialised{
 				Line:   n.Line(),
 				Column: getStartColumn(param.Token),
 				Kind:   UNKNOWN,
@@ -1393,7 +1406,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 	case *ast.IfExpression:
 		// create a new enclosed scope and walk the if statement and its alternatives
 		runWalk(n.Condition, scope, IF_CONDITION)
-		newscope := NewEnclosedScope(scope)
+		newscope := NewEnclosedScope(scope, n.Line())
 		*scopes = append(*scopes, newscope)
 		runWalk(n.Consequence, newscope, NIL)
 		if n.Alternative != nil {
@@ -1402,7 +1415,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 	case *ast.ForExpression:
 		// create a new enclosed scope and walk the for loop
 		runWalk(n.Condition, scope, NIL)
-		newscope := NewEnclosedScope(scope)
+		newscope := NewEnclosedScope(scope, n.Line())
 		*scopes = append(*scopes, newscope)
 		if rn, ok := n.Condition.(*ast.RangeExpression); ok {
 			if rn.Val1 != nil {
@@ -1416,7 +1429,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 					kind = INT
 				}
 
-				newscope.vals[rn.Val1.Value] = &Initialised{
+				newscope.Vals[rn.Val1.Value] = &Initialised{
 					Line:   rn.Val1.Line(),
 					Column: getStartColumn(rn.Val1.Token),
 					Kind:   kind,
@@ -1427,7 +1440,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 				if GetInitType(rn.Ranging, scope) == STRING {
 					kind = STRING
 				}
-				newscope.vals[rn.Val2.Value] = &Initialised{
+				newscope.Vals[rn.Val2.Value] = &Initialised{
 					Line:   rn.Val2.Line(),
 					Column: getStartColumn(rn.Val2.Token),
 					Kind:   kind,
@@ -1441,7 +1454,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		for _, cas := range n.Cases {
 			// walk the case condition and also the body
 			runWalk(cas.Condition, scope, NIL)
-			newscope := NewEnclosedScope(scope)
+			newscope := NewEnclosedScope(scope, cas.Line())
 			*scopes = append(*scopes, newscope)
 			runWalk(cas.Consequence, newscope, NIL)
 		}
@@ -1506,7 +1519,7 @@ func checkSpecialFieldAccessImport(n *ast.FieldAccess, scope *Scope, name string
 	} else {
 		if sc, ok := n.Left.(*ast.StructTypeConversion); ok {
 			if id, ok := n.Right.(*ast.Identifier); ok {
-				st, _, strfields := evalStructConversionImport(sc, scope, scope, name, "", false, "")
+				st, _, strfields := evalstructConversionImport(sc, scope, scope, name, "", false, "")
 				logging.Logger.Println("struct conversion field access", sc.String(), st, strfields, "Identifier")
 				if len(strfields) != 0 && st != nil {
 					_, isfield := strfields[id.Value]
@@ -1546,7 +1559,7 @@ func evalFieldAccess(n *ast.FieldAccess, scope *Scope, context Context, diags *[
 		runWalk(n.Left, scope, NIL)
 		if sc, ok := n.Left.(*ast.StructTypeConversion); ok {
 			if id, ok := n.Right.(*ast.Identifier); ok {
-				st, _, strfields := evalStructConversion(sc, diags, scope, "")
+				st, _, strfields := evalstructConversion(sc, diags, scope, "")
 				logging.Logger.Println("struct conversion field access", sc.String(), st, strfields, "Identifier")
 				if len(strfields) != 0 && st != nil {
 					_, isfield := strfields[id.Value]
@@ -1768,7 +1781,7 @@ func diag(Message string, line int, lines []string, sev int, token ...token.Toke
 func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri lsp.DocumentURI, isStd bool) []lsp.Diagnostic {
 	dependencies := map[string]bool{}
 	linediags := []LineDiagnostic{}
-	mainScope := NewScope()
+	mainScope := NewScope(1)
 	scopes := []*Scope{}
 	identLines := []LocationInit{}
 	logging.Logger.Println("program", IsNil(program))
@@ -1792,12 +1805,11 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 
 	extractedBuiltins := false
 	builtinDest := ""
-	DocToInits[uri] = map[string]*Initialised{}
+	DocToScopes[uri] = scopes
 	for _, scope := range scopes {
-		for letident, init := range scope.vals {
-			DocToInits[uri][letident] = init
+		for letident, init := range scope.Vals {
 			if init.ImportFile == "" && !init.HiddenInit {
-				identLines = append(identLines, LocationInit{Pos: Position{Line: init.Line, StartColumn: init.Column, EndColumn: init.Column + (len(letident) - 1)}, Init: init, Name: letident, Scope: scope})
+				identLines = append(identLines, LocationInit{Pos: Position{Line: init.Line, StartColumn: init.Column, EndColumn: init.Column + (len(letident) - 1)}, Init: init, Name: letident, Scope: scope, Exists: true})
 			}
 			if init.Kind == STRUCT_INSTANCE {
 				if init.NodeCopy == nil {
@@ -1814,8 +1826,8 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 					if len(stType.Extras) != 0 {
 						for method, nodepos := range stType.Extras {
 							pos := nodepos.Pos
-							scope.vals[letident].Extras[method] = NodePos{Pos: Position{Line: pos.Line, StartColumn: pos.StartColumn, EndColumn: pos.EndColumn}, NodeCopy: nodepos.NodeCopy}
-							scope.vals[letident+"."+method] = &Initialised{
+							scope.Vals[letident].Extras[method] = NodePos{Pos: Position{Line: pos.Line, StartColumn: pos.StartColumn, EndColumn: pos.EndColumn}, NodeCopy: nodepos.NodeCopy}
+							scope.Vals[letident+"."+method] = &Initialised{
 								Line:     pos.Line,
 								Column:   pos.StartColumn,
 								NodeCopy: nodepos.NodeCopy,
@@ -1828,6 +1840,8 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 		}
 		for _, ident := range scope.idents {
 			if _, ok := builtins[ident.Val]; !ok && !scope.Exists(ident.Val) {
+				// Add non exisiting ident to list
+				identLines = append(identLines, LocationInit{Pos: Position{Line: ident.Line, StartColumn: getStartColumn(ident.Token), EndColumn: ident.Token.Column}, Init: &Initialised{NodeCopy: nil, Kind: UNKNOWN, Line: ident.Line, Column: getStartColumn(ident.Token)}, Name: ident.Val, Scope: scope, Exists: false})
 				diags = append(diags, diag("Identifier not found: "+ident.Val, ident.Line, lines, 0, ident.Token))
 			} else {
 				if _, ok := builtins[ident.Val]; ok && !scope.Exists(ident.Val) {
@@ -1873,11 +1887,11 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 					if builtins, ok := Modulemap[builtinDest]; ok {
 						for _, builtin := range builtins.Exports {
 							if builtin.Name == ident.Val {
-								identLines = append(identLines, LocationInit{Pos: Position{Line: ident.Line, StartColumn: ident.Token.Column - (len(ident.Token.Literal) - 1), EndColumn: ident.Token.Column}, Init: &Initialised{Line: builtin.Init.Line, Column: builtin.Init.Column, Kind: FUNCTION, NodeCopy: builtin.Init.NodeCopy, ImportFile: builtinDest}, Name: builtin.Name, Scope: scope})
+								identLines = append(identLines, LocationInit{Pos: Position{Line: ident.Line, StartColumn: ident.Token.Column - (len(ident.Token.Literal) - 1), EndColumn: ident.Token.Column}, Init: &Initialised{Line: builtin.Init.Line, Column: builtin.Init.Column, Kind: FUNCTION, NodeCopy: builtin.Init.NodeCopy, ImportFile: builtinDest}, Name: builtin.Name, Scope: scope, Exists: true})
 							}
 						}
 					} else {
-						identLines = append(identLines, LocationInit{Pos: Position{Line: ident.Line, StartColumn: ident.Token.Column - (len(ident.Token.Literal) - 1), EndColumn: ident.Token.Column}, Init: &Initialised{Line: 1, Column: 1, Kind: FUNCTION, ImportFile: builtinDest}, Name: ident.Val, Scope: scope})
+						identLines = append(identLines, LocationInit{Pos: Position{Line: ident.Line, StartColumn: ident.Token.Column - (len(ident.Token.Literal) - 1), EndColumn: ident.Token.Column}, Init: &Initialised{Line: 1, Column: 1, Kind: FUNCTION, ImportFile: builtinDest}, Name: ident.Val, Scope: scope, Exists: true})
 					}
 
 					if ident.UseType != FUNCTION_NAME {
@@ -1890,10 +1904,11 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 					}
 				}
 				if scope.Exists(ident.Val) {
-					identLines = append(identLines, LocationInit{Pos: Position{Line: ident.Line, StartColumn: ident.Token.Column - (len(ident.Token.Literal) - 1), EndColumn: ident.Token.Column}, Init: scope.Lookup(ident.Val), Name: ident.Val, Scope: scope})
+					identLines = append(identLines, LocationInit{Pos: Position{Line: ident.Line, StartColumn: ident.Token.Column - (len(ident.Token.Literal) - 1), EndColumn: ident.Token.Column}, Init: scope.Lookup(ident.Val), Name: ident.Val, Scope: scope, Exists: true})
 				}
 			}
 		}
+
 	}
 
 	logging.Logger.Println("Checked inits and idents")

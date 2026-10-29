@@ -6,7 +6,6 @@ import (
 	"github.com/BobdaProgrammer/bolt/ast"
 	"github.com/BobdaProgrammer/bolt/lexer"
 	"github.com/BobdaProgrammer/bolt/lsp/analyzer"
-	"github.com/BobdaProgrammer/bolt/lsp/logging"
 )
 
 func Documentation(n ast.Node, init *analyzer.Initialised, letIdent string, scope *analyzer.Scope, comments map[int]lexer.Comment) string {
@@ -47,12 +46,12 @@ func Documentation(n ast.Node, init *analyzer.Initialised, letIdent string, scop
 		if scope.Exists(n.Left.String()) {
 			stInit := scope.Lookup(n.Left.String())
 			if stInit.Kind != analyzer.STRUCT || stInit.NodeCopy == nil {
-				goto structTypeEnd
+				break
 			}
 
 			st, ok := stInit.NodeCopy.(*ast.StructType)
 			if !ok {
-				goto structTypeEnd
+				break
 			}
 
 			if len(st.Fields) > 0 {
@@ -74,8 +73,6 @@ func Documentation(n ast.Node, init *analyzer.Initialised, letIdent string, scop
 			}
 
 		}
-	structTypeEnd:
-		logging.Logger.Println("Hover struct instance: ", doc)
 	case *ast.StructType:
 		doc = "Type: STRUCT\n\n```bolt\n" + n.String() + "\n```"
 		if comment, ok := comments[init.Line-1]; ok {

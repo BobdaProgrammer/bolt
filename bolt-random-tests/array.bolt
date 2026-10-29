@@ -1,4 +1,3 @@
-// hello
 import "bolt-random-tests/functions.bolt"
 import "fs"
 
@@ -10,7 +9,11 @@ struct m {
     another,
     jeff
 }
-let x = 5
+
+let z = fn(){
+    let bob = 12
+}
+
 struct a {
     jeff
 }
@@ -26,7 +29,7 @@ pub let math = new m{abs:new a{jeff:fn(x){
 
 pub let ne = math.abs as m
 pub let y = (math.abs as m).read
-let arr = [1,2,3,4]
+let array = [1,2,3,4]
 
 // insert will insert a value at a specfic location in an array
 let insert = fn(arr, i, val){
@@ -42,4 +45,4 @@ file.ext("hi")
 
 math.abs
 math.abs.jeff(12)
-log(insert(arr, 1, "bob"))
+log(insert(array, 1, "bob"))
