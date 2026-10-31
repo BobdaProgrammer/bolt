@@ -2,9 +2,8 @@ import "bolt-random-tests/importtest.bolt"
 import "bolt-random-tests/array.bolt"
 
 let x = fn(){}
-let x = [1,2,3]
 array.math.abs
-array.ne.read()
+array.ne.read("hi")
 importtest.helo
 importtest.goodbye
 importtest.testing.Testat

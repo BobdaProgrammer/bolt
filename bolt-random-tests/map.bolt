@@ -1,32 +1,21 @@
 // an unconventional map method
 let map = fn(arr, f){ // Map function
-    let iter = fn(arr, accumulated) {
-        if len(arr) == 0{
-            accumulated // return accumulated
+    let iter = fn(a, accumulated) {
+        if len(a) == 0{
+            return accumulated 
         }else{
-            let l = len(arr);
-            let b = "string"
+            let l = len(a);
             let rstart = 1;
             let rend = l;
-            let next  = arr[rstart:rend]
-            if l==1 {
-                let next = []
-            }
-            iter(next, push(accumulated,f(arr[0])));
+            let next  = a[rstart:rend]
+            return iter(next, push(accumulated,f(a[0])));
         }
     }; 
-    iter(arr, [])
+    return iter(arr, [])
 }
 
 let double = fn(item){
     return item * 2
 }
 
-
-let x = "hello"
-
-if (x=="hello") == ("hello" && true){
-    log("hi")
-}
-
-map([1.5,2.2,3,4,5,true], double)
+log(map([1.5,2.2,3,4,5,3], double))

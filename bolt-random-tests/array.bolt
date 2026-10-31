@@ -3,7 +3,6 @@ import "fs"
 
 // hello
 log(functions.y)
-let x = 5
 struct m {
     abs,
     another,
@@ -12,10 +11,13 @@ struct m {
 
 let z = fn(){
     let bob = 12
+    return bob
 }
+
 
 let x = fn(val){
     let x = 12
+    return x
 }
 
 struct a {

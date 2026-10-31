@@ -41,7 +41,6 @@ let Filepath.ext = fn(x){
 
 
     // TODO: handle if path is "hello/bob\this/that.txt" also "that.bob.txt"
-    let slash = "/"
     if strings.contains(name, "\\") || strings.contains(name, "/"){
         let spl = name[math.max(strings.lastIndexOf(name, "/"), strings.lastIndexOf(name,"\\"))+1:len(name)]
         if strings.contains(spl, "."){

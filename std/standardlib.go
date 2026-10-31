@@ -3,6 +3,7 @@ package std
 import (
 	"embed"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,9 +56,11 @@ var packages map[string]string = map[string]string{
 }
 
 var StandardGoCallFunctions map[string]object.Object = map[string]object.Object{
-	"lower":   &object.Builtin{Fn: lower},
-	"upper":   &object.Builtin{Fn: upper},
-	"syscall": &object.Builtin{Fn: Syscall},
+	"lower":    &object.Builtin{Fn: lower},
+	"upper":    &object.Builtin{Fn: upper},
+	"infinite": &object.Builtin{Fn: infinite},
+	"NaN":      &object.Builtin{Fn: NaN},
+	"syscall":  &object.Builtin{Fn: Syscall},
 }
 
 func newError(format string, a ...interface{}) *object.Error {
@@ -67,6 +70,14 @@ func newError(format string, a ...interface{}) *object.Error {
 // wna = wrong number of args
 func wna(e, g int, fun string) object.Object {
 	return newError("Wrong number of arguments in go standard call. expected=%d, got=%d, func=%s", e, g, fun)
+}
+
+func NaN(args ...object.Object) object.Object {
+	return &object.Float{Value: math.Float64frombits(0x7FF8000000000000)}
+}
+
+func infinite(args ...object.Object) object.Object {
+	return &object.Float{Value: math.Float64frombits(0x7FF0000000000000)}
 }
 
 func lower(args ...object.Object) object.Object {

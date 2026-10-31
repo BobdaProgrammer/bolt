@@ -37,6 +37,7 @@ type Module struct {
 
 type Position struct {
 	Line, StartColumn, EndColumn int
+	Token                        token.Token // optional
 }
 
 type LocationInit struct {
@@ -127,6 +128,14 @@ func GetInitType(n ast.Node, scope *Scope) InitType {
 		return STRUCT_CONVERT
 	case *ast.ArrayLiteral:
 		return ARRAY
+	case *ast.PrefixExpression:
+		if n.Operator == "..." {
+			return SPREAD
+		} else if n.Operator == "!" {
+			return BOOL
+		} else {
+			return GetInitType(n.Right, scope)
+		}
 	case *ast.HashLiteral:
 		return HASH
 	case *ast.Identifier:
@@ -161,6 +170,7 @@ const (
 	STRUCT_CONVERT
 	HASH
 	ARRAY
+	SPREAD
 	MODULE
 	UNKNOWN
 )
@@ -176,6 +186,7 @@ var InitTypeToString map[InitType]string = map[InitType]string{
 	STRUCT:          "STRUCT",
 	STRUCT_INSTANCE: "STRUCT INSTANCE",
 	ARRAY:           "ARRAY",
+	SPREAD:          "SPREAD",
 	HASH:            "HASH",
 	MODULE:          "MODULE",
 	UNKNOWN:         "UNKNOWN",
@@ -290,6 +301,7 @@ const (
 	RANGE_ROLE
 	IF_CONDITION
 	NIL
+	PUB
 )
 
 func GetImport(path string, line int) (*ast.Program, string, LineDiagnostic, bool, string) {
@@ -1002,20 +1014,20 @@ func walkInfix(n *ast.InfixExpression, scope *Scope, diags *[]LineDiagnostic) In
 	return et
 }
 
-func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]bool, diags *[]LineDiagnostic, context Context, identLines *[]LocationInit) {
+func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]bool, diags *[]LineDiagnostic, context Context, identLines *[]LocationInit, letInits *map[*Scope]map[string]Position) {
 	if IsNil(n) {
 		return
 	}
 
 	runWalk := func(node ast.Node, scope *Scope, rt RoleType, ctx ...Context) {
 		if len(ctx) > 0 {
-			walk(node, scope, scopes, dependencies, diags, ctx[0], identLines)
+			walk(node, scope, scopes, dependencies, diags, ctx[0], identLines, letInits)
 		} else {
 			newCtx := context
 			newCtx.letIdent = ""
 			newCtx.lastNode = n
 			newCtx.role = rt
-			walk(node, scope, scopes, dependencies, diags, newCtx, identLines)
+			walk(node, scope, scopes, dependencies, diags, newCtx, identLines, letInits)
 		}
 	}
 
@@ -1092,6 +1104,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		runWalk(n.Value, scope, ASSIGNING)
 	case *ast.IndexExpression:
 		leftType := GetInitType(n.Left, scope)
+		runWalk(n.Index, scope, NIL)
 		if leftType == ARRAY {
 			runWalk(n.Left, scope, ARRAY_NAME)
 			if GetInitType(n.Index, scope) != INT {
@@ -1115,7 +1128,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 			runWalk(n.Left, scope, NIL)
 		}
 	case *ast.IndexAssignExpression:
-
+		runWalk(n.Index, scope, NIL)
 		if GetInitType(n.Left, scope) == ARRAY {
 			runWalk(n.Left, scope, ARRAY_NAME)
 			if GetInitType(n.Index, scope) != INT {
@@ -1140,6 +1153,8 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		}
 		runWalk(n.Value, scope, ASSIGNING)
 	case *ast.SliceExpression:
+		runWalk(n.IndexStart, scope, NIL)
+		runWalk(n.IndexEnd, scope, NIL)
 		leftType := GetInitType(n.Left, scope)
 		if leftType == ARRAY {
 			runWalk(n.Left, scope, ARRAY_NAME)
@@ -1187,6 +1202,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		identstr := ""
 		var letident *ast.Identifier
 		if ident, ok := n.Left.(*ast.Identifier); ok {
+			letInit(letInits, scope, ident.Value, context.role, n.Value, Position{Line: ident.Line(), StartColumn: getStartColumn(ident.Token), EndColumn: ident.Token.Column, Token: ident.Token})
 			letident = ident
 			scope.Vals[ident.Value] = &Initialised{
 				Line:     n.Left.Line(),
@@ -1230,6 +1246,8 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 
 			for _, el := range arr.Elements {
 				if id, ok := el.(*ast.Identifier); ok {
+					logging.Logger.Println("Let statement array literal identifier", id.Value, context.role, n.Value, id.Token.Column)
+					letInit(letInits, scope, id.Value, context.role, n.Value, Position{Line: id.Line(), StartColumn: getStartColumn(id.Token), EndColumn: id.Token.Column, Token: id.Token})
 					scope.Vals[id.Value] = &Initialised{
 						Line:   id.Line(),
 						Column: getStartColumn(id.Token),
@@ -1465,7 +1483,7 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		}
 	case *ast.PubStatement:
 		// walk whats after the pub
-		runWalk(n.Stmt, scope, NIL)
+		runWalk(n.Stmt, scope, PUB)
 	case *ast.InfixExpression:
 		// walk both sides of infix expression
 		runWalk(n.Left, scope, INFIXED)
@@ -1507,10 +1525,25 @@ func walk(n ast.Node, scope *Scope, scopes *[]*Scope, dependencies *map[string]b
 		}
 		scope.idents = append(scope.idents, i)
 	case *ast.FieldAccess:
-		logging.Logger.Println("field access", n)
 		evalFieldAccess(n, scope, context, diags, runWalk)
 	}
 
+}
+
+func letInit(letInits *map[*Scope]map[string]Position, scope *Scope, s string, roleType RoleType, expression ast.Expression, pos Position) {
+	if roleType == PUB {
+		return
+	}
+
+	t := GetInitType(expression, scope)
+	if t != INT && t != BOOL && t != STRING && t != FLOAT && t != ARRAY && t != HASH && t != SPREAD {
+		return
+	}
+
+	if _, ok := (*letInits)[scope]; !ok {
+		(*letInits)[scope] = map[string]Position{}
+	}
+	(*letInits)[scope][s] = pos
 }
 
 func checkSpecialFieldAccessImport(n *ast.FieldAccess, scope *Scope, name string) InitType {
@@ -1629,7 +1662,6 @@ func fieldAccess(fa *ast.FieldAccess, context Context, scope *Scope, diags *[]Li
 	if IsNil(fa.Left) || IsNil(fa.Right) {
 		return Ident{}, false
 	}
-	logging.Logger.Println("wasn't nil", fa)
 	if id, ok := fa.Right.(*ast.Identifier); ok {
 		curr += "." + id.Value
 		return Ident{
@@ -1647,7 +1679,7 @@ func fieldAccess(fa *ast.FieldAccess, context Context, scope *Scope, diags *[]Li
 			return Ident{}, false
 		}
 	} else if ie, ok := fa.Right.(*ast.IndexExpression); ok {
-
+		runWalk(ie.Index)
 		if id, ok := ie.Left.(*ast.Identifier); ok {
 			curr += "." + id.Value
 			exists := scope.Exists(curr)
@@ -1679,6 +1711,7 @@ func fieldAccess(fa *ast.FieldAccess, context Context, scope *Scope, diags *[]Li
 			return Ident{}, false
 		}
 	} else if iae, ok := fa.Right.(*ast.IndexAssignExpression); ok {
+		runWalk(iae.Index)
 		if id, ok := iae.Left.(*ast.Identifier); ok {
 			curr += "." + id.Value
 			exists := scope.Exists(curr)
@@ -1711,6 +1744,8 @@ func fieldAccess(fa *ast.FieldAccess, context Context, scope *Scope, diags *[]Li
 			return Ident{}, false
 		}
 	} else if se, ok := fa.Right.(*ast.SliceExpression); ok {
+		runWalk(se.IndexStart)
+		runWalk(se.IndexEnd)
 		if id, ok := se.Left.(*ast.Identifier); ok {
 			curr += "." + id.Value
 			exists := scope.Exists(curr)
@@ -1743,7 +1778,7 @@ func fieldAccess(fa *ast.FieldAccess, context Context, scope *Scope, diags *[]Li
 	}
 }
 
-func diag(Message string, line int, lines []string, sev int, token ...token.Token) lsp.Diagnostic {
+func diag(Message string, line int, lines []string, sev int, tags []lsp.DiagnosticTag, token ...token.Token) lsp.Diagnostic {
 	if line < 1 || line > len(lines) {
 		return lsp.Diagnostic{}
 	}
@@ -1760,7 +1795,7 @@ func diag(Message string, line int, lines []string, sev int, token ...token.Toke
 		endC = int(math.Min(float64(tok.Column), float64(endC)))
 	}
 
-	return lsp.Diagnostic{
+	d := lsp.Diagnostic{
 		Range: lsp.Range{
 			Start: lsp.Position{
 				Line:      line - 1,
@@ -1776,6 +1811,12 @@ func diag(Message string, line int, lines []string, sev int, token ...token.Toke
 		Source:   "bolt",
 		Message:  Message,
 	}
+
+	if len(tags) > 0 {
+		d.Tags = tags
+	}
+
+	return d
 }
 
 func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri lsp.DocumentURI, isStd bool) []lsp.Diagnostic {
@@ -1784,6 +1825,7 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 	mainScope := NewScope(1)
 	scopes := []*Scope{}
 	identLines := []LocationInit{}
+	letInits := map[*Scope]map[string]Position{}
 	logging.Logger.Println("program", IsNil(program))
 	_, ok := ast.SafeString(program)
 	if IsNil(program.Statements) || !ok {
@@ -1791,14 +1833,14 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 	}
 	for _, stmt := range program.Statements {
 		if !IsNil(stmt) {
-			walk(stmt, mainScope, &scopes, &dependencies, &linediags, Context{inFor: false, letIdent: "", lastNode: nil, isStd: isStd}, &identLines)
+			walk(stmt, mainScope, &scopes, &dependencies, &linediags, Context{inFor: false, letIdent: "", lastNode: nil, isStd: isStd}, &identLines, &letInits)
 		}
 	}
 	ModuleDependencies[path] = dependencies
 
 	diags := []lsp.Diagnostic{}
 	for _, d := range linediags {
-		diags = append(diags, diag(d.Message, d.Line, lines, 0))
+		diags = append(diags, diag(d.Message, d.Line, lines, 0, []lsp.DiagnosticTag{}))
 	}
 	scopes = append(scopes, mainScope)
 	logging.Logger.Println("Scopes", len(scopes))
@@ -1807,7 +1849,9 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 	builtinDest := ""
 	DocToScopes[uri] = scopes
 	for _, scope := range scopes {
+		initNameToInit := map[string]*Initialised{}
 		for letident, init := range scope.Vals {
+			initNameToInit[letident] = init
 			if init.ImportFile == "" && !init.HiddenInit {
 				identLines = append(identLines, LocationInit{Pos: Position{Line: init.Line, StartColumn: init.Column, EndColumn: init.Column + (len(letident) - 1)}, Init: init, Name: letident, Scope: scope, Exists: true})
 			}
@@ -1839,10 +1883,27 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 			}
 		}
 		for _, ident := range scope.idents {
+			if l, ok := letInits[scope][ident.Val]; ok && (scope.Exists(ident.Val) && scope.Lookup(ident.Val).Line == l.Line) {
+				letInits[scope][ident.Val] = Position{Line: -2, StartColumn: -2, EndColumn: -2}
+			} else if scope.Outer != nil {
+				sc := scope.Outer
+				for sc != nil {
+					if _, ok := letInits[sc]; ok {
+						logging.Logger.Println("let inits", ident.Val, letInits[sc][ident.Val], letInits[sc][ident.Val].Line, sc.Lookup(ident.Val).Line)
+						if l, ok := letInits[sc][ident.Val]; ok && (sc.Exists(ident.Val) && sc.Lookup(ident.Val).Line == l.Line) {
+							letInits[sc][ident.Val] = Position{Line: -2, StartColumn: -2, EndColumn: -2}
+							break
+						}
+					}
+
+					sc = sc.Outer
+				}
+			}
+
 			if _, ok := builtins[ident.Val]; !ok && !scope.Exists(ident.Val) {
 				// Add non exisiting ident to list
 				identLines = append(identLines, LocationInit{Pos: Position{Line: ident.Line, StartColumn: getStartColumn(ident.Token), EndColumn: ident.Token.Column}, Init: &Initialised{NodeCopy: nil, Kind: UNKNOWN, Line: ident.Line, Column: getStartColumn(ident.Token)}, Name: ident.Val, Scope: scope, Exists: false})
-				diags = append(diags, diag("Identifier not found: "+ident.Val, ident.Line, lines, 0, ident.Token))
+				diags = append(diags, diag("Identifier not found: "+ident.Val, ident.Line, lines, 0, []lsp.DiagnosticTag{}, ident.Token))
 			} else {
 				if _, ok := builtins[ident.Val]; ok && !scope.Exists(ident.Val) {
 					if !extractedBuiltins {
@@ -1895,12 +1956,12 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 					}
 
 					if ident.UseType != FUNCTION_NAME {
-						diags = append(diags, diag("Cannot use builtin: "+ident.Val+" as non-function", ident.Line, lines, 0, ident.Token))
+						diags = append(diags, diag("Cannot use builtin: "+ident.Val+" as non-function", ident.Line, lines, 0, []lsp.DiagnosticTag{}, ident.Token))
 					}
 				} else if init, ok := RoleToInitType[ident.UseType]; ok {
 					it := scope.Lookup(ident.Val)
 					if it.Kind != init && init != UNKNOWN && it.Kind != UNKNOWN {
-						diags = append(diags, diag("Cannot use "+ident.Val+" which is "+InitTypeToString[it.Kind]+" as "+InitTypeToString[init], ident.Line, lines, 0, ident.Token))
+						diags = append(diags, diag("Cannot use "+ident.Val+" which is "+InitTypeToString[it.Kind]+" as "+InitTypeToString[init], ident.Line, lines, 0, []lsp.DiagnosticTag{}, ident.Token))
 					}
 				}
 				if scope.Exists(ident.Val) {
@@ -1909,6 +1970,18 @@ func CheckInitsAndIdents(program *ast.Program, lines []string, path string, uri 
 			}
 		}
 
+	}
+
+	for _, scope := range scopes {
+		for initname, pos := range letInits[scope] {
+			if pos.Line != -2 && pos.StartColumn != -2 && pos.EndColumn != -2 {
+				if pos.Token != (token.Token{}) {
+					diags = append(diags, diag("Unused variable "+initname, pos.Line, lines, 1, []lsp.DiagnosticTag{lsp.DiagnosticTag(1)}, pos.Token)) // 1 is tag unecessary
+				} else {
+					diags = append(diags, diag("Unused variable "+initname, pos.Line, lines, 1, []lsp.DiagnosticTag{lsp.DiagnosticTag(1)})) // 1 is tag unecessary
+				}
+			}
+		}
 	}
 
 	logging.Logger.Println("Checked inits and idents")
